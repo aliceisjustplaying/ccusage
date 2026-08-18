@@ -893,7 +893,7 @@ fn filter_rows(rows: &mut Vec<AllRow>, filters: AllFilters<'_>) {
     });
 }
 
-fn filter_row_models(row: &mut AllRow, patterns: &[String]) -> bool {
+pub(super) fn filter_row_models(row: &mut AllRow, patterns: &[String]) -> bool {
     row.model_breakdowns.retain(|breakdown| {
         let model = unprefixed_model_name(&breakdown.model_name);
         patterns
@@ -1014,13 +1014,16 @@ where
         .map(|(model, usage)| {
             let input =
                 codex::non_cached_input_tokens(usage.input_tokens, usage.cached_input_tokens);
+            let represented_total = input
+                .saturating_add(usage.output_tokens)
+                .saturating_add(usage.cached_input_tokens);
             ModelBreakdown {
                 model_name: model.clone(),
                 input_tokens: input,
                 output_tokens: usage.output_tokens,
                 cache_creation_tokens: 0,
                 cache_read_tokens: usage.cached_input_tokens,
-                extra_total_tokens: 0,
+                extra_total_tokens: usage.total_tokens.saturating_sub(represented_total),
                 cost: codex::calculate_codex_model_cost(model, usage, pricing, speed),
                 missing_pricing: codex::codex_model_missing_pricing(model, usage, pricing),
             }

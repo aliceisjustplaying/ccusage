@@ -923,6 +923,8 @@ fn option_takes_value(arg: &str) -> bool {
             | "--pi-path"
             | "--open-claw-path"
             | "--sections"
+            | "--agent"
+            | "--model"
     )
 }
 
@@ -1142,6 +1144,7 @@ fn parse_agent_selectors(value: &str) -> Result<Vec<AgentSelector>, String> {
                 });
             };
             if !selector.ends_with(']')
+                || selector[..open].contains(']')
                 || selector[open + 1..selector.len() - 1].contains(['[', ']'])
             {
                 return Err(invalid_agent_selector(&selector));

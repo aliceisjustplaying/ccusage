@@ -92,7 +92,8 @@ fn requested_sections(
 
 #[cfg(test)]
 use loader::{
-    AllFilters, aggregate_rows, codex_group_row, load_agent_rows_parallel, load_rows, load_sections,
+    AllFilters, aggregate_rows, codex_group_row, filter_row_models, load_agent_rows_parallel,
+    load_rows, load_sections,
 };
 #[cfg(test)]
 use report::{

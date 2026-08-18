@@ -542,7 +542,7 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
 fn splits_pi_usage_by_message_provider() {
     let fixture = fs_fixture!({
         "pi/sessions/project-a/agent_session-a.jsonl": [
-            r#"{"type":"message","timestamp":"2026-08-18T08:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-5","usage":{"input":10,"output":1,"cost":{"total":1.0}}}}"#,
+            r#"{"type":"message","timestamp":"2026-08-18T09:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"gpt-5.6-sol","usage":{"input":20,"output":2,"cacheRead":200,"cost":{"total":2.0}}}}"#,
             r#"{"type":"message","timestamp":"2026-08-18T09:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{"input":20,"output":2,"cacheRead":200,"cost":{"total":2.0}}}}"#,
             r#"{"type":"message","timestamp":"2026-08-18T10:00:00.000Z","message":{"role":"assistant","provider":"xai-auth","model":"grok-4.6","usage":{"input":30,"output":3,"cost":{"total":3.0}}}}"#,
         ].join("\n"),
@@ -573,7 +573,7 @@ fn splits_pi_usage_by_message_provider() {
         .collect::<Vec<_>>();
     assert_eq!(
         providers,
-        vec![("anthropic", 10), ("openai-codex", 20), ("xai-auth", 30)]
+        vec![("anthropic", 20), ("openai-codex", 20), ("xai-auth", 30)]
     );
     let report = report_json_with_agents(&result.rows, AgentReportKind::Daily, true);
     assert_eq!(report["daily"][0]["agents"][1]["provider"], "openai-codex");
@@ -586,7 +586,7 @@ fn filters_pi_provider_and_model_with_agent_selector() {
         "pi/sessions/project-a/agent_session-a.jsonl": [
             r#"{"type":"message","timestamp":"2026-08-18T08:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{"input":20,"output":2,"cost":{"total":2.0}}}}"#,
             r#"{"type":"message","timestamp":"2026-08-18T09:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"o4-mini","usage":{"input":40,"output":4,"cost":{"total":4.0}}}}"#,
-            r#"{"type":"message","timestamp":"2026-08-18T10:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-5","usage":{"input":80,"output":8,"cost":{"total":8.0}}}}"#,
+            r#"{"type":"message","timestamp":"2026-08-18T10:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"gpt-5.6-sol","usage":{"input":80,"output":8,"cost":{"total":8.0}}}}"#,
         ].join("\n"),
     });
     let _env = isolated_agent_env(
@@ -816,7 +816,8 @@ fn includes_codex_model_breakdowns_in_all_rows() {
         input_tokens: 300,
         cached_input_tokens: 100,
         output_tokens: 50,
-        total_tokens: 350,
+        reasoning_output_tokens: 1,
+        total_tokens: 351,
         ..CodexGroup::default()
     };
     group.models.insert(
@@ -835,19 +836,24 @@ fn includes_codex_model_breakdowns_in_all_rows() {
             input_tokens: 200,
             cached_input_tokens: 80,
             output_tokens: 40,
-            total_tokens: 240,
+            reasoning_output_tokens: 1,
+            total_tokens: 241,
             ..CodexModelUsage::default()
         },
     );
 
-    let row = codex_group_row("2026-01-02", &group, &pricing, CodexSpeed::Standard);
+    let mut row = codex_group_row("2026-01-02", &group, &pricing, CodexSpeed::Standard);
 
     assert_eq!(row.model_breakdowns.len(), 2);
     assert_eq!(row.model_breakdowns[0].model_name, "gpt-5");
     assert_eq!(row.model_breakdowns[0].input_tokens, 120);
     assert_eq!(row.model_breakdowns[0].cache_read_tokens, 80);
     assert_eq!(row.model_breakdowns[0].output_tokens, 40);
+    assert_eq!(row.model_breakdowns[0].extra_total_tokens, 1);
     assert_eq!(row.model_breakdowns[1].model_name, "gpt-5-mini");
+
+    assert!(filter_row_models(&mut row, &["gpt-5".to_string()]));
+    assert_eq!(row.total_tokens, 241);
 }
 
 #[test]

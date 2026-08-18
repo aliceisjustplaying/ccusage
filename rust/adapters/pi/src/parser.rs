@@ -1,7 +1,7 @@
 use std::{fs, path::Path, sync::Arc};
 
 use jiff::tz::TimeZone as JiffTimeZone;
-use serde::Deserialize;
+use serde::{Deserialize, de::DeserializeOwned};
 
 use crate::{
     LoadedEntry, PiEntry, Pricing, PricingMap, Result, TokenUsageRaw, UsageEntry, UsageMessage,
@@ -13,24 +13,49 @@ use ccusage_adapter_common::jsonl;
 /// A single parsed pi session record. Only the fields ccusage consumes are
 /// declared; serde skips everything else.
 #[derive(Debug, Deserialize)]
-struct PiLine {
+struct PiLine<P> {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     r#type: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     timestamp: Option<String>,
-    message: Option<PiMessage>,
+    message: Option<PiMessage<P>>,
 }
 
 /// The pi `message` block carried by assistant records.
 #[derive(Debug, Deserialize)]
-struct PiMessage {
+struct PiMessage<P> {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     role: Option<String>,
-    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
-    provider: Option<String>,
+    #[serde(flatten)]
+    provider: P,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     model: Option<String>,
     usage: Option<PiUsage>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct IgnoreProvider {}
+
+#[derive(Debug, Default, Deserialize)]
+struct PreserveProvider {
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    provider: Option<String>,
+}
+
+trait ParsedProvider {
+    fn into_provider(self) -> Option<String>;
+}
+
+impl ParsedProvider for IgnoreProvider {
+    fn into_provider(self) -> Option<String> {
+        None
+    }
+}
+
+impl ParsedProvider for PreserveProvider {
+    fn into_provider(self) -> Option<String> {
+        self.provider
+    }
 }
 
 /// Token counts and optional display cost carried by a pi assistant message.
@@ -72,8 +97,31 @@ pub fn read_session_file(
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
+) -> Result<Vec<LoadedEntry>> {
+    read_session_file_with_context::<IgnoreProvider, _, _>(
+        path,
+        tz,
+        mode,
+        pricing,
+        PiStoreContext::Default,
+        |_, entry| entry,
+    )
+}
+
+pub(super) fn read_session_file_with_provider(
+    path: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
 ) -> Result<Vec<PiEntry>> {
-    read_session_file_with_context(path, tz, mode, pricing, PiStoreContext::Default)
+    read_session_file_with_context::<PreserveProvider, _, _>(
+        path,
+        tz,
+        mode,
+        pricing,
+        PiStoreContext::Default,
+        |provider, entry| PiEntry { provider, entry },
+    )
 }
 
 pub(super) fn read_session_file_for_store(
@@ -83,8 +131,8 @@ pub(super) fn read_session_file_for_store(
     mode: CostMode,
     pricing: Option<&PricingMap>,
     store_name: &str,
-) -> Result<Vec<PiEntry>> {
-    read_session_file_with_context(
+) -> Result<Vec<LoadedEntry>> {
+    read_session_file_with_context::<IgnoreProvider, _, _>(
         path,
         tz,
         mode,
@@ -93,6 +141,28 @@ pub(super) fn read_session_file_for_store(
             root: store_root,
             name: store_name,
         },
+        |_, entry| entry,
+    )
+}
+
+pub(super) fn read_session_file_for_store_with_provider(
+    path: &Path,
+    store_root: &Path,
+    tz: Option<&JiffTimeZone>,
+    mode: CostMode,
+    pricing: Option<&PricingMap>,
+    store_name: &str,
+) -> Result<Vec<PiEntry>> {
+    read_session_file_with_context::<PreserveProvider, _, _>(
+        path,
+        tz,
+        mode,
+        pricing,
+        PiStoreContext::Named {
+            root: store_root,
+            name: store_name,
+        },
+        |provider, entry| PiEntry { provider, entry },
     )
 }
 
@@ -161,13 +231,18 @@ impl<'a> PiStoreContext<'a> {
     }
 }
 
-fn read_session_file_with_context(
+fn read_session_file_with_context<P, T, F>(
     path: &Path,
     tz: Option<&JiffTimeZone>,
     mode: CostMode,
     pricing: Option<&PricingMap>,
     context: PiStoreContext<'_>,
-) -> Result<Vec<PiEntry>> {
+    mut finish_entry: F,
+) -> Result<Vec<T>>
+where
+    P: DeserializeOwned + ParsedProvider,
+    F: FnMut(Option<String>, LoadedEntry) -> T,
+{
     let content = fs::read(path)?;
     let project = context.project(path);
     let session_id = extract_session_id(path);
@@ -176,7 +251,7 @@ fn read_session_file_with_context(
     let prefilter = LinePrefilter::all(&[br#""usage""#, br#""message""#]);
     let mut entries = Vec::new();
 
-    for record in jsonl::records::<PiLine>(&content, Some(&prefilter)) {
+    for record in jsonl::records::<PiLine<P>>(&content, Some(&prefilter)) {
         if !is_pi_message_usage(&record) {
             continue;
         }
@@ -186,7 +261,7 @@ fn read_session_file_with_context(
         let Some(timestamp) = crate::parse_ts_timestamp(&timestamp_text) else {
             continue;
         };
-        let Some(message) = record.message.as_ref() else {
+        let Some(message) = record.message else {
             continue;
         };
         let Some(usage_value) = message.usage.as_ref() else {
@@ -244,9 +319,10 @@ fn read_session_file_with_context(
             is_api_error_message: None,
             is_sidechain: None,
         };
-        entries.push(PiEntry {
-            provider: message.provider.clone(),
-            entry: LoadedEntry {
+        let provider = message.provider.into_provider();
+        entries.push(finish_entry(
+            provider,
+            LoadedEntry {
                 date: format_date_tz(timestamp, tz),
                 timestamp,
                 project: Arc::from(project.as_str()),
@@ -261,12 +337,12 @@ fn read_session_file_with_context(
                 usage_limit_reset_time: None,
                 missing_pricing_model,
             },
-        });
+        ));
     }
     Ok(entries)
 }
 
-fn is_pi_message_usage(record: &PiLine) -> bool {
+fn is_pi_message_usage<P>(record: &PiLine<P>) -> bool {
     if record
         .r#type
         .as_deref()
@@ -412,7 +488,8 @@ mod tests {
         });
         let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
 
-        let entries = read_session_file(&file, None, CostMode::Display, None).unwrap();
+        let entries =
+            read_session_file_with_provider(&file, None, CostMode::Display, None).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].provider.as_deref(), Some("openai-codex"));

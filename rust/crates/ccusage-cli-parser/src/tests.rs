@@ -509,6 +509,12 @@ fn rejects_unified_options_with_top_level_session_id() {
         "Unified report options cannot be used with session --id."
     );
 
+    let by_provider_error = parse_error(&["ccusage", "session", "--id", "abc", "--by-provider"]);
+    assert_eq!(
+        by_provider_error,
+        "Unified report options cannot be used with session --id."
+    );
+
     let selector_error = parse_error(&[
         "ccusage",
         "session",
@@ -531,6 +537,9 @@ fn rejects_unified_only_flags_on_per_agent_subcommands() {
     let by_agent_error = parse_error(&["ccusage", "codex", "daily", "--by-agent"]);
     assert_eq!(by_agent_error, "Unknown codex option '--by-agent'");
 
+    let by_provider_error = parse_error(&["ccusage", "codex", "daily", "--by-provider"]);
+    assert_eq!(by_provider_error, "Unknown codex option '--by-provider'");
+
     let agent_error = parse_error(&["ccusage", "codex", "daily", "--agent", "pi"]);
     assert_eq!(agent_error, "Unknown codex option '--agent'");
 
@@ -546,6 +555,27 @@ fn rejects_malformed_agent_provider_selector() {
         error,
         "Invalid --agent selector 'pi[openai-codex'. Expected agent or agent[provider], for example codex or pi[openai-codex]."
     );
+
+    let extra_bracket = parse_error(&["ccusage", "daily", "--agent", "pi]foo[openai-codex]"]);
+    assert_eq!(
+        extra_bracket,
+        "Invalid --agent selector 'pi]foo[openai-codex]'. Expected agent or agent[provider], for example codex or pi[openai-codex]."
+    );
+}
+
+#[test]
+fn root_filter_values_are_not_mistaken_for_commands() {
+    let Some(Command::All(args)) = parse(&["ccusage", "--agent", "codex", "weekly"]).command else {
+        panic!("expected unified weekly command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert_eq!(args.agent_selectors[0].agent, "codex");
+
+    let Some(Command::All(args)) = parse(&["ccusage", "--model", "codex", "weekly"]).command else {
+        panic!("expected unified weekly command");
+    };
+    assert_eq!(args.kind, AgentReportKind::Weekly);
+    assert_eq!(args.model_patterns, ["codex"]);
 }
 
 #[test]
