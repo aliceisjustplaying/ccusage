@@ -96,8 +96,8 @@ use loader::{
 };
 #[cfg(test)]
 use report::{
-    all_report_title, all_table_columns, all_table_row, report_json, report_json_with_agents,
-    sections_report_json,
+    all_report_title, all_table_columns, all_table_row, provider_label, report_json,
+    report_json_with_agents, sections_report_json,
 };
 #[cfg(test)]
 use types::{AgentLoadSpec, AgentRows, AllRow};

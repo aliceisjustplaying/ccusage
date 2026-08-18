@@ -402,7 +402,7 @@ pub(super) fn all_table_row(
     };
     let label = row.provider.as_ref().map_or_else(
         || agent_label(row.agent).to_string(),
-        |provider| format!("{}[{provider}]", agent_label(row.agent)),
+        |provider| provider_label(row.agent, provider),
     );
     let agent = if breakdown {
         format!("- {label}")
@@ -600,4 +600,19 @@ fn agent_label(agent: &str) -> &str {
         "grok" => "Grok",
         _ => agent,
     }
+}
+
+pub(super) fn provider_label(agent: &str, provider: &str) -> String {
+    let agent = if agent == "pi" {
+        "Pi"
+    } else {
+        agent_label(agent)
+    };
+    let provider = match provider {
+        "anthropic" => "Anthropic",
+        "openai-codex" => "OpenAI",
+        "xai-auth" => "xAI",
+        _ => provider,
+    };
+    format!("{agent}/{provider}")
 }

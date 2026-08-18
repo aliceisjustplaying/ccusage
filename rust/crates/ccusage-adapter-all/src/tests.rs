@@ -1039,7 +1039,7 @@ fn all_table_rows_match_main_agent_breakdown_display() {
 }
 
 #[test]
-fn provider_breakdown_table_row_uses_agent_selector_syntax() {
+fn provider_breakdown_table_row_uses_compact_label() {
     let row = AllRow {
         period: "2026-08-18".to_string(),
         agent: "pi",
@@ -1057,10 +1057,15 @@ fn provider_breakdown_table_row_uses_agent_selector_syntax() {
         model_breakdowns: Vec::new(),
     };
 
-    assert_eq!(
-        all_table_row(&row, false, true, false)[1],
-        "- pi-agent[openai-codex]"
-    );
+    assert_eq!(all_table_row(&row, false, true, false)[1], "- Pi/OpenAI");
+}
+
+#[test]
+fn provider_breakdown_table_labels_shorten_known_pi_providers() {
+    assert_eq!(provider_label("pi", "anthropic"), "Pi/Anthropic");
+    assert_eq!(provider_label("pi", "openai-codex"), "Pi/OpenAI");
+    assert_eq!(provider_label("pi", "xai-auth"), "Pi/xAI");
+    assert_eq!(provider_label("pi", "unknown"), "Pi/unknown");
 }
 
 #[test]

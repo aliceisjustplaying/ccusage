@@ -80,7 +80,7 @@ ccusage daily --agent pi --by-provider
 ccusage daily --agent 'pi[openai-codex]' --model 'gpt-*'
 ```
 
-Pi assistant messages record `provider` alongside `model`. Unified reports preserve that field for `--by-provider` and bracketed agent selectors; older records without it appear under `pi-agent[unknown]`.
+Pi assistant messages record `provider` alongside `model`. Unified reports preserve that field for `--by-provider` and bracketed agent selectors; older records without it appear under `Pi/unknown`.
 
 ## Environment Variables
 
