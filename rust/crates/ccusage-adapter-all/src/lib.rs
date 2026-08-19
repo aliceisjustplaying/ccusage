@@ -37,7 +37,6 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let kind = args.kind;
     let include_agents = args.by_agent || args.by_provider || !args.agent_selectors.is_empty();
     let filters = loader::AllFilters {
-        by_provider: args.by_provider,
         agent_selectors: &args.agent_selectors,
         model_patterns: &args.model_patterns,
     };

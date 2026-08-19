@@ -165,14 +165,14 @@ ccusage daily --sections daily,monthly,session --json
 # Add per-agent breakdowns to daily, weekly, and monthly JSON rows
 ccusage daily --by-agent --json
 
-# Split Pi-format agents by the provider recorded on each message
-ccusage daily --by-provider
+# Include Pi provider rows in unified JSON output
+ccusage daily --by-provider --json
 
 # Select agents, scoped providers, and model globs
 ccusage daily --agent 'codex,pi[openai-codex]' --model 'gpt-*'
 ```
 
-`--sections` accepts a comma-separated list of `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included. For table output, each requested section is printed as a separate table. `--by-agent` is JSON-only; session rows are already per-agent. `--by-provider` splits Pi-format rows using the provider stored on each assistant message. `--agent` accepts comma-separated `agent` or `agent[provider]` selectors, while `--model` accepts comma-separated `*` and `?` glob patterns.
+`--sections` accepts a comma-separated list of `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included. For table output, each requested section is printed as a separate table, with Pi-format rows grouped by message provider by default. `--by-agent` is JSON-only; session rows are already per-agent. `--by-provider` includes Pi provider rows in unified JSON output. `--agent` accepts comma-separated `agent` or `agent[provider]` selectors, while `--model` accepts comma-separated `*` and `?` glob patterns.
 
 ### Daily Command
 

@@ -73,14 +73,17 @@ ccusage pi daily --since 2026-05-01 --until 2026-05-16
 # Show model breakdown
 ccusage pi daily --breakdown
 
-# Split Pi usage by provider in the unified report
-ccusage daily --agent pi --by-provider
+# Pi usage is split by provider in unified tables by default
+ccusage daily --agent pi
+
+# Include the same provider rows in unified JSON output
+ccusage daily --agent pi --by-provider --json
 
 # Select GPT usage recorded through Pi's OpenAI Codex provider
 ccusage daily --agent 'pi[openai-codex]' --model 'gpt-*'
 ```
 
-Pi assistant messages record `provider` alongside `model`. Unified reports preserve that field for `--by-provider` and bracketed agent selectors; older records without it appear under `Pi/unknown`.
+Pi assistant messages record `provider` alongside `model`. Unified reports group Pi-format rows by that provider by default. `--by-provider` exposes the rows in unified JSON, bracketed agent selectors filter them, and older records without a provider appear under `Pi/unknown`.
 
 ## Environment Variables
 

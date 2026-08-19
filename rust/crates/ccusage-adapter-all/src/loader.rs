@@ -20,7 +20,6 @@ use crate::{
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct AllFilters<'a> {
-    pub(super) by_provider: bool,
     pub(super) agent_selectors: &'a [AgentSelector],
     pub(super) model_patterns: &'a [String],
 }
@@ -224,14 +223,7 @@ fn load_base_rows(
             agent: BUILT_IN_AGENT_NAMES[7],
             progress_agent: crate::progress::UsageLoadAgent("pi-agent"),
             load: Box::new(|| {
-                load_pi_format_agent_rows(
-                    "pi",
-                    None,
-                    load_kind,
-                    &loader_shared,
-                    pricing,
-                    filters.split_pi_provider("pi"),
-                )
+                load_pi_format_agent_rows("pi", None, load_kind, &loader_shared, pricing)
             }),
         },
         AgentLoadSpec {
@@ -364,7 +356,6 @@ fn load_base_rows(
                     load_kind,
                     loader_shared_ref,
                     pricing_ref,
-                    filters.split_pi_provider(agent),
                 )
             }),
         });
@@ -397,13 +388,6 @@ impl AllFilters<'_> {
                 .agent_selectors
                 .iter()
                 .any(|selector| wildcard_match(&selector.agent, agent))
-    }
-
-    fn split_pi_provider(self, agent: &str) -> bool {
-        self.by_provider
-            || self.agent_selectors.iter().any(|selector| {
-                wildcard_match(&selector.agent, agent) && selector.provider.is_some()
-            })
     }
 
     fn matches_row(self, row: &AllRow) -> bool {
@@ -589,25 +573,9 @@ fn load_pi_format_agent_rows(
     kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
-    by_provider: bool,
 ) -> Result<AgentRows> {
-    if by_provider {
-        let entries = pi::load_entries_with_provider(shared, custom_path, Some(pricing))?;
-        return filtered_pi_provider_rows(agent, kind, shared, entries, true);
-    }
-    let mut entries = pi::load_entries(shared, custom_path, Some(pricing))?;
-    let detected = !entries.is_empty();
-    let summaries = if kind == AgentReportKind::Session {
-        filter_loaded_entries_by_date(&mut entries, shared);
-        summarize_entry_sessions(&entries)?
-    } else {
-        filter_loaded_entries_by_date(&mut entries, shared);
-        pi::summarize_entries(&entries, kind)?
-    };
-    Ok(AgentRows {
-        rows: summary_rows(agent, summaries, true),
-        detected,
-    })
+    let entries = pi::load_entries_with_provider(shared, custom_path, Some(pricing))?;
+    filtered_pi_provider_rows(agent, kind, shared, entries, true)
 }
 
 #[cfg(test)]
@@ -618,8 +586,13 @@ fn load_named_pi_store_rows(
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
-    let entries = pi::load_entries_for_store_path(shared, store_path, agent, Some(pricing))?;
-    filtered_pi_format_agent_rows(agent, kind, shared, entries, true)
+    let entries = pi::load_entries_for_store_paths_with_provider(
+        shared,
+        vec![PathBuf::from(store_path)],
+        agent,
+        Some(pricing),
+    )?;
+    filtered_pi_provider_rows(agent, kind, shared, entries, true)
 }
 
 fn load_named_pi_store_rows_from_paths(
@@ -628,19 +601,10 @@ fn load_named_pi_store_rows_from_paths(
     kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
-    by_provider: bool,
 ) -> Result<AgentRows> {
-    if by_provider {
-        let entries = pi::load_entries_for_store_paths_with_provider(
-            shared,
-            store_paths,
-            agent,
-            Some(pricing),
-        )?;
-        return filtered_pi_provider_rows(agent, kind, shared, entries, true);
-    }
-    let entries = pi::load_entries_for_store_paths(shared, store_paths, agent, Some(pricing))?;
-    filtered_pi_format_agent_rows(agent, kind, shared, entries, true)
+    let entries =
+        pi::load_entries_for_store_paths_with_provider(shared, store_paths, agent, Some(pricing))?;
+    filtered_pi_provider_rows(agent, kind, shared, entries, true)
 }
 
 fn filtered_pi_provider_rows(
@@ -681,22 +645,6 @@ fn filtered_pi_provider_rows(
         ));
     }
     Ok(AgentRows { rows, detected })
-}
-
-fn filtered_pi_format_agent_rows(
-    agent: &'static str,
-    kind: AgentReportKind,
-    shared: &SharedArgs,
-    mut entries: Vec<LoadedEntry>,
-    include_project_path: bool,
-) -> Result<AgentRows> {
-    let detected = !entries.is_empty();
-    filter_loaded_entries_by_date(&mut entries, shared);
-    let summaries = pi::summarize_entries(&entries, kind)?;
-    Ok(AgentRows {
-        rows: summary_rows(agent, summaries, include_project_path),
-        detected,
-    })
 }
 
 fn load_claude_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRows> {
@@ -1327,7 +1275,6 @@ mod tests {
             AgentReportKind::Session,
             &shared,
             &PricingMap::default(),
-            false,
         )
         .unwrap();
 
@@ -1614,7 +1561,6 @@ mod tests {
             AgentReportKind::Daily,
             &shared,
             &PricingMap::default(),
-            false,
         )
         .unwrap()
         .rows;

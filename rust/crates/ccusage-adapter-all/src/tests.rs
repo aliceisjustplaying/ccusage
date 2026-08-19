@@ -539,7 +539,7 @@ fn multi_section_codex_fixture_matches_standalone_sections_for_daily_and_session
 }
 
 #[test]
-fn splits_pi_usage_by_message_provider() {
+fn splits_pi_usage_by_message_provider_by_default() {
     let fixture = fs_fixture!({
         "pi/sessions/project-a/agent_session-a.jsonl": [
             r#"{"type":"message","timestamp":"2026-08-18T09:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"gpt-5.6-sol","usage":{"input":20,"output":2,"cacheRead":200,"cost":{"total":2.0}}}}"#,
@@ -554,15 +554,7 @@ fn splits_pi_usage_by_message_provider() {
     );
     let shared = fixture_shared("20260818", "20260818");
 
-    let result = load_rows(
-        AgentReportKind::Daily,
-        &shared,
-        AllFilters {
-            by_provider: true,
-            ..AllFilters::default()
-        },
-    )
-    .unwrap();
+    let result = load_rows(AgentReportKind::Daily, &shared, AllFilters::default()).unwrap();
 
     let providers = result.rows[0]
         .agent_breakdowns
@@ -607,7 +599,6 @@ fn filters_pi_provider_and_model_with_agent_selector() {
         AllFilters {
             agent_selectors: &selectors,
             model_patterns: &models,
-            ..AllFilters::default()
         },
     )
     .unwrap();

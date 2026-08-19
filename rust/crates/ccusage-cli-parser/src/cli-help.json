@@ -94,7 +94,7 @@
 		},
 		{
 			"flags": "--by-provider",
-			"description": "Split Pi-format agent rows by message provider",
+			"description": "Include Pi provider rows in unified JSON output",
 			"default": "false"
 		},
 		{
