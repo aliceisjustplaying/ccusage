@@ -15,6 +15,8 @@ use ccusage_adapter_common::jsonl;
 #[derive(Debug, Deserialize)]
 struct PiLine {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    id: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     r#type: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     timestamp: Option<String>,
@@ -237,7 +239,7 @@ fn read_session_file_with_context(
             message: UsageMessage {
                 usage,
                 model: model.clone(),
-                id: None,
+                id: record.id,
             },
             cost_usd: display_cost,
             request_id: None,

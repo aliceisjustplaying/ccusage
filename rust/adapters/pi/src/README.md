@@ -19,3 +19,5 @@ ccusage daily --agent 'pi[openai-codex]' --model 'gpt-*'
 ```
 
 Assistant message records may include a `provider` field. Focused Pi reports aggregate it as before; unified reports group Pi-format rows by provider by default and retain it for selectors and JSON breakdowns.
+
+The loader deduplicates copied history globally by the message record's top-level `id`. Legacy records without an ID keep the path, session, timestamp, model, usage, cost, and provider fallback identity.

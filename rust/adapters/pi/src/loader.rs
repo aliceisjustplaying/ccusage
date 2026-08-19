@@ -67,6 +67,15 @@ enum PiLoadScope<'a> {
     Named { store_name: &'a str },
 }
 
+#[derive(Debug, Eq, Hash, PartialEq)]
+enum PiDedupeKey {
+    Message(String),
+    Legacy {
+        entry: String,
+        provider: Option<String>,
+    },
+}
+
 impl<'a> PiLoadScope<'a> {
     fn store_name(self) -> &'a str {
         match self {
@@ -126,15 +135,19 @@ fn load_entries_from_paths(
         });
         for file_entries in loaded {
             for entry in file_entries {
-                let id = match scope {
-                    PiLoadScope::Default => parser::entry_id(&entry),
-                    PiLoadScope::Named { .. } => {
-                        parser::entry_id_for_store(scope.store_name(), &entry)
+                let id = if let Some(message_id) = entry.data.message.id.clone() {
+                    PiDedupeKey::Message(message_id)
+                } else {
+                    let entry_id = match scope {
+                        PiLoadScope::Default => parser::entry_id(&entry),
+                        PiLoadScope::Named { .. } => {
+                            parser::entry_id_for_store(scope.store_name(), &entry)
+                        }
+                    };
+                    PiDedupeKey::Legacy {
+                        entry: entry_id,
+                        provider: entry.provider.clone(),
                     }
-                };
-                let id = match entry.provider.as_deref() {
-                    Some(provider) => format!("{id}:provider:{}:{provider}", provider.len()),
-                    None => id,
                 };
                 if seen.insert(id) {
                     entries.push(entry);
@@ -144,4 +157,107 @@ fn load_entries_from_paths(
     }
     entries.sort_by_key(|entry| entry.timestamp);
     Ok(entries)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ccusage_test_support::fs_fixture;
+
+    #[test]
+    fn counts_a_resumed_message_id_once_across_session_files() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_original.jsonl": r#"{"type":"message","id":"msg-420","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":400,"output":20}}}"#,
+            "sessions/project-a/agent_resumed.jsonl": r#"{"type":"message","id":"msg-420","timestamp":"2026-01-03T00:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":400,"output":20}}}"#,
+        });
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries(
+            &shared,
+            Some(fixture.path("sessions").to_str().unwrap()),
+            None,
+        )
+        .unwrap();
+        let total = entries
+            .iter()
+            .map(|entry| {
+                crate::total_usage_tokens(entry.data.message.usage) + entry.extra_total_tokens
+            })
+            .sum::<u64>();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(total, 420);
+    }
+
+    #[test]
+    fn counts_a_subagent_transcript_mirror_and_nested_source_once() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/subagent-artifacts/worker_transcript.jsonl": r#"{"type":"message","id":"subagent-msg","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":300,"output":20}}}"#,
+            "sessions/project-a/subagent-artifacts/run-worker/session.jsonl": r#"{"type":"message","id":"subagent-msg","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":300,"output":20}}}"#,
+        });
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries(
+            &shared,
+            Some(fixture.path("sessions").to_str().unwrap()),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("subagent-msg"));
+    }
+
+    #[test]
+    fn keeps_distinct_nested_subagent_message_ids() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/subagent-artifacts/run-worker-a/session.jsonl": r#"{"type":"message","id":"subagent-msg-a","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":200,"output":10}}}"#,
+            "sessions/project-a/subagent-artifacts/run-worker-b/session.jsonl": r#"{"type":"message","id":"subagent-msg-b","timestamp":"2026-01-02T00:00:01.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":200,"output":10}}}"#,
+        });
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries(
+            &shared,
+            Some(fixture.path("sessions").to_str().unwrap()),
+            None,
+        )
+        .unwrap();
+        let ids = entries
+            .iter()
+            .filter_map(|entry| entry.data.message.id.as_deref())
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, vec!["subagent-msg-a", "subagent-msg-b"]);
+    }
+
+    #[test]
+    fn provider_metadata_does_not_split_copies_of_one_message_id() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_original.jsonl": r#"{"type":"message","id":"shared-msg","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":100,"output":10}}}"#,
+            "sessions/project-a/agent_resumed.jsonl": r#"{"type":"message","id":"shared-msg","timestamp":"2026-01-03T00:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"claude-sonnet-4","usage":{"input":100,"output":10}}}"#,
+        });
+        let shared = SharedArgs {
+            mode: crate::cli::CostMode::Display,
+            ..SharedArgs::default()
+        };
+
+        let entries = load_entries(
+            &shared,
+            Some(fixture.path("sessions").to_str().unwrap()),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].data.message.id.as_deref(), Some("shared-msg"));
+    }
 }

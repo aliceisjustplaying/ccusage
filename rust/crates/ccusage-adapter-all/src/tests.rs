@@ -682,6 +682,35 @@ fn splits_pi_usage_by_message_provider_by_default() {
 }
 
 #[test]
+fn pi_provider_breakdown_dedupes_copied_message_ids_globally() {
+    let fixture = fs_fixture!({
+        "pi/sessions/project-a/agent_original.jsonl": [
+            r#"{"type":"message","id":"copied-msg","timestamp":"2026-08-18T08:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":20,"output":2}}}"#,
+            r#"{"type":"message","id":"distinct-msg","timestamp":"2026-08-18T09:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{"input":30,"output":3}}}"#,
+        ].join("\n"),
+        "pi/sessions/project-a/agent_resumed.jsonl": r#"{"type":"message","id":"copied-msg","timestamp":"2026-08-18T10:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-sonnet-4","usage":{"input":20,"output":2}}}"#,
+    });
+    let _env = isolated_agent_env(
+        &fixture,
+        "PI_AGENT_DIR",
+        fixture.path("pi/sessions").into_os_string(),
+    );
+    let shared = fixture_shared("20260818", "20260818");
+
+    let result = load_rows(AgentReportKind::Daily, &shared, AllFilters::default()).unwrap();
+    let providers = result.rows[0]
+        .agent_breakdowns
+        .as_ref()
+        .unwrap()
+        .iter()
+        .map(|row| (row.provider.as_deref().unwrap(), row.input_tokens))
+        .collect::<Vec<_>>();
+
+    assert_eq!(providers, vec![("anthropic", 20), ("openai-codex", 30)]);
+    assert_eq!(result.rows[0].input_tokens, 50);
+}
+
+#[test]
 fn filters_pi_provider_and_model_with_agent_selector() {
     let fixture = fs_fixture!({
         "pi/sessions/project-a/agent_session-a.jsonl": [
