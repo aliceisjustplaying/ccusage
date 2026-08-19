@@ -84,6 +84,7 @@ mod tests {
         let entries = load_entries(&shared, fixture.root().to_str(), None).unwrap();
 
         assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].provider.as_deref(), Some("openai-codex"));
         assert_eq!(entries[0].date, "2026-01-30");
         assert_eq!(entries[0].session_id.as_ref(), "abc");
         assert_eq!(entries[0].model.as_deref(), Some("[openclaw] gpt-5.2"));

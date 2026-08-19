@@ -306,6 +306,7 @@ pub(super) fn parse_session_files(
                 session_id: Arc::from(session_id.clone()),
                 project_path: Arc::from(meta.project_path.as_str()),
                 cost,
+                provider: Some("xai".to_string()),
                 credits: None,
                 model: Some(display_model),
                 message_count: None,

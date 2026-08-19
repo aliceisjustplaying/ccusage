@@ -138,6 +138,14 @@ fn merge_agent_breakdown(target: &mut AllRow, source: AllRow) {
     target.cache_read_tokens += source.cache_read_tokens;
     target.total_tokens += source.total_tokens;
     target.total_cost += source.total_cost;
+    let mut agents = BTreeSet::new();
+    if let Some(target_agents) = target.metadata_agents.take() {
+        agents.extend(target_agents);
+    }
+    if let Some(source_agents) = source.metadata_agents {
+        agents.extend(source_agents);
+    }
+    target.metadata_agents = (!agents.is_empty()).then(|| agents.into_iter().collect());
     let mut models: BTreeSet<String> = target.models_used.drain(..).collect();
     models.extend(source.models_used);
     target.models_used = models.into_iter().collect();
@@ -197,4 +205,85 @@ fn aggregate_model_breakdowns(rows: &[AllRow]) -> Vec<ModelBreakdown> {
         }
     }
     breakdowns
+}
+
+pub(super) fn group_rows_by_provider(rows: Vec<AllRow>) -> Vec<AllRow> {
+    rows.into_iter()
+        .map(|mut row| {
+            let Some(breakdowns) = row.agent_breakdowns.take() else {
+                return row;
+            };
+            let mut providers = std::collections::BTreeMap::<String, AllRow>::new();
+            for mut breakdown in breakdowns {
+                let provider =
+                    canonical_provider_id(breakdown.provider.as_deref().unwrap_or("unknown"));
+                normalize_models(&mut breakdown);
+                breakdown.agent = "all";
+                breakdown.provider = Some(provider.clone());
+                breakdown.metadata = None;
+                match providers.get_mut(&provider) {
+                    Some(existing) => merge_agent_breakdown(existing, breakdown),
+                    None => {
+                        providers.insert(provider, breakdown);
+                    }
+                }
+            }
+            let provider_rows = providers.into_values().collect::<Vec<_>>();
+            row.models_used = provider_rows
+                .iter()
+                .flat_map(|provider| provider.models_used.iter().cloned())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            row.model_breakdowns = aggregate_model_breakdowns(&provider_rows);
+            row.agent_breakdowns = Some(provider_rows);
+            row
+        })
+        .collect()
+}
+
+pub(super) fn summarize_rows(rows: Vec<AllRow>) -> Vec<AllRow> {
+    let mut accumulator = AllAccumulator::default();
+    for row in rows {
+        if let Some(breakdowns) = row.agent_breakdowns {
+            for breakdown in breakdowns {
+                accumulator.add(breakdown);
+            }
+        } else {
+            accumulator.add(row);
+        }
+    }
+    let row = accumulator.into_row("Summary".to_string());
+    (row.total_tokens > 0).then_some(row).into_iter().collect()
+}
+
+pub(super) fn canonical_provider_id(provider: &str) -> String {
+    let provider = provider.trim().to_ascii_lowercase();
+    match provider.as_str() {
+        "openai-codex" => "openai".to_string(),
+        "xai-auth" => "xai".to_string(),
+        "" => "unknown".to_string(),
+        _ => provider,
+    }
+}
+
+fn normalize_models(row: &mut AllRow) {
+    row.models_used = row
+        .models_used
+        .drain(..)
+        .map(|model| unprefixed_model_name(&model).to_string())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    for model in &mut row.model_breakdowns {
+        model.model_name = unprefixed_model_name(&model.model_name).to_string();
+    }
+    row.model_breakdowns = merge_model_breakdowns([], row.model_breakdowns.drain(..));
+}
+
+fn unprefixed_model_name(model: &str) -> &str {
+    model
+        .strip_prefix('[')
+        .and_then(|rest| rest.split_once("] "))
+        .map_or(model, |(_, model)| model)
 }

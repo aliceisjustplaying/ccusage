@@ -527,6 +527,7 @@ mod tests {
         let entries = load_entries_from_directory(fixture.root(), &shared).unwrap();
 
         assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].provider.as_deref(), Some("anthropic"));
         assert_eq!(entries[0].date, "2026-01-02");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(

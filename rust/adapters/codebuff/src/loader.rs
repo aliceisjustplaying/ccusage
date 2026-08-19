@@ -74,6 +74,7 @@ fn to_loaded_entry(
         is_sidechain: None,
     };
     LoadedEntry {
+        provider: Some(entry.provider.clone()),
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("codebuff"),
@@ -121,6 +122,7 @@ mod tests {
 
         let channel = fixture.root().file_name().unwrap().to_str().unwrap();
         assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].provider.as_deref(), Some("anthropic"));
         assert_eq!(entries[0].date, "2026-01-02");
         assert_eq!(
             entries[0].session_id.as_ref(),
@@ -201,6 +203,7 @@ mod tests {
             session_id: Arc::from("session-a"),
             project_path: Arc::from("Codebuff"),
             cost: 0.02,
+            provider: Some("anthropic".to_string()),
             extra_total_tokens: 0,
             credits: Some(1.25),
             model: Some("claude-sonnet-4-20250514".to_string()),

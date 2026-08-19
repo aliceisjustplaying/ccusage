@@ -477,6 +477,7 @@ pub(super) fn event_to_loaded(
         is_sidechain: None,
     };
     LoadedEntry {
+        provider: Some("google".to_string()),
         date: format_date_tz(event.timestamp, tz),
         timestamp: event.timestamp,
         project: Arc::from("gemini"),

@@ -202,6 +202,7 @@ INSERT INTO sessions (
         .unwrap();
 
         assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].provider.as_deref(), Some("anthropic"));
         assert_eq!(entries[0].date, "2026-05-01");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].data.message.usage.input_tokens, 100);

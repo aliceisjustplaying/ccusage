@@ -73,6 +73,7 @@ fn to_loaded_entry(
         is_sidechain: None,
     };
     LoadedEntry {
+        provider: Some(entry.provider.clone()),
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("droid"),
@@ -159,6 +160,7 @@ mod tests {
         let entries = load_entries(&shared, &pricing).unwrap();
 
         assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].provider.as_deref(), Some("anthropic"));
         assert_eq!(entries[0].date, "2026-05-01");
         assert_eq!(entries[0].session_id.as_ref(), "session-a");
         assert_eq!(entries[0].model.as_deref(), Some("claude-sonnet-4"));
@@ -251,6 +253,7 @@ mod tests {
             session_id: Arc::from("session-a"),
             project_path: Arc::from("Droid"),
             cost: 0.0,
+            provider: Some("anthropic".to_string()),
             credits: None,
             extra_total_tokens: 5,
             model: Some("claude-sonnet-4".to_string()),

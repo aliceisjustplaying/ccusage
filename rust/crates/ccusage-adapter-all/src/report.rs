@@ -24,13 +24,23 @@ pub(super) fn report_json(rows: &[AllRow], kind: AgentReportKind) -> Value {
     report_json_with_agents(rows, kind, false)
 }
 
+#[cfg(test)]
 pub(super) fn report_json_with_agents(
     rows: &[AllRow],
     kind: AgentReportKind,
     include_agents: bool,
 ) -> Value {
+    report_json_with_breakdowns(rows, kind, include_agents, false)
+}
+
+pub(super) fn report_json_with_breakdowns(
+    rows: &[AllRow],
+    kind: AgentReportKind,
+    include_breakdowns: bool,
+    by_provider: bool,
+) -> Value {
     json!({
-        rows_key(kind): rows.iter().map(|row| row_json(row, include_agents)).collect::<Vec<_>>(),
+        rows_key(kind): rows.iter().map(|row| row_json(row, include_breakdowns, by_provider)).collect::<Vec<_>>(),
         "totals": totals_json(rows),
     })
 }
@@ -46,7 +56,7 @@ pub(super) fn sections_report_json(
             rows_key(*kind),
             Value::Array(
                 rows.iter()
-                    .map(|row| row_json(row, include_agents))
+                    .map(|row| row_json(row, include_agents, false))
                     .collect(),
             ),
         ));
@@ -63,10 +73,15 @@ pub(super) fn print_sections_report_json(
     sections: &[(AgentReportKind, Vec<AllRow>)],
     command_kind: AgentReportKind,
     include_agents: bool,
+    by_provider: bool,
     jq: Option<&str>,
     no_cost: bool,
 ) -> Result<()> {
-    let mut report = sections_report_json(sections, command_kind, include_agents);
+    let mut report = if by_provider {
+        sections_report_json_with_providers(sections, command_kind, include_agents)
+    } else {
+        sections_report_json(sections, command_kind, include_agents)
+    };
     if no_cost {
         report.strip_costs();
     }
@@ -129,7 +144,31 @@ impl Serialize for OrderedJsonMap {
     }
 }
 
-fn row_json(row: &AllRow, include_agents: bool) -> Value {
+fn sections_report_json_with_providers(
+    sections: &[(AgentReportKind, Vec<AllRow>)],
+    command_kind: AgentReportKind,
+    include_breakdowns: bool,
+) -> OrderedJsonMap {
+    let mut fields = Vec::with_capacity(sections.len() + 1);
+    for (kind, rows) in sections {
+        fields.push((
+            rows_key(*kind),
+            Value::Array(
+                rows.iter()
+                    .map(|row| row_json(row, include_breakdowns, true))
+                    .collect(),
+            ),
+        ));
+    }
+    let command_rows = sections
+        .iter()
+        .find_map(|(kind, rows)| (*kind == command_kind).then_some(rows.as_slice()))
+        .unwrap_or(&[]);
+    fields.push(("totals", totals_json(command_rows)));
+    OrderedJsonMap { fields }
+}
+
+fn row_json(row: &AllRow, include_breakdowns: bool, by_provider: bool) -> Value {
     let mut value = agent_json(row);
     if let Some(obj) = value.as_object_mut() {
         obj.insert("period".to_string(), json!(row.period));
@@ -144,12 +183,12 @@ fn row_json(row: &AllRow, include_agents: bool) -> Value {
     } else if let (Some(obj), Some(metadata)) = (value.as_object_mut(), row.metadata.as_ref()) {
         obj.insert("metadata".to_string(), metadata.clone());
     }
-    if include_agents
+    if include_breakdowns
         && let (Some(obj), Some(agent_breakdowns)) =
             (value.as_object_mut(), row.agent_breakdowns.as_ref())
     {
         obj.insert(
-            "agents".to_string(),
+            if by_provider { "providers" } else { "agents" }.to_string(),
             Value::Array(agent_breakdowns.iter().map(agent_json).collect()),
         );
     }
@@ -199,6 +238,8 @@ pub(super) fn print_table(
     kind: AgentReportKind,
     shared: &SharedArgs,
     detected_agents: &[&'static str],
+    by_provider: bool,
+    summary: bool,
 ) -> Result<()> {
     print_box_title(&all_report_title(kind, rows, detected_agents), shared);
     if rows.is_empty() {
@@ -213,12 +254,38 @@ pub(super) fn print_table(
         terminal_width,
         crate::USAGE_COMPACT_WIDTH_THRESHOLD,
     );
-    let (headers, aligns) = all_table_columns(kind, compact, shared.no_cost);
+    let (headers, aligns) = all_table_columns(kind, compact, shared.no_cost, by_provider);
     let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(shared))
         .with_terminal_width(terminal_width)
         .with_date_compaction(true);
 
     for row in rows {
+        if summary
+            && by_provider
+            && let Some(provider_rows) = row.agent_breakdowns.as_ref()
+        {
+            for provider in provider_rows {
+                let mut provider_total = provider.clone();
+                if shared.breakdown {
+                    provider_total.models_used.clear();
+                }
+                table.push(all_table_row(
+                    &provider_total,
+                    compact,
+                    false,
+                    shared.no_cost,
+                ));
+                if shared.breakdown && !provider.model_breakdowns.is_empty() {
+                    push_model_breakdown_rows(
+                        &mut table,
+                        &provider.model_breakdowns,
+                        compact,
+                        shared,
+                    );
+                }
+            }
+            continue;
+        }
         table.push(all_table_row(row, compact, false, shared.no_cost));
         if let Some(agent_breakdowns) = row.agent_breakdowns.as_ref() {
             for breakdown in agent_breakdowns {
@@ -507,6 +574,7 @@ pub(super) fn all_table_columns(
     kind: AgentReportKind,
     compact: bool,
     no_cost: bool,
+    by_provider: bool,
 ) -> (Vec<&'static str>, Vec<Align>) {
     let (mut headers, mut aligns) = if compact {
         (
@@ -557,6 +625,9 @@ pub(super) fn all_table_columns(
         headers.pop();
         aligns.pop();
     }
+    if by_provider {
+        headers[1] = "Provider";
+    }
     (headers, aligns)
 }
 
@@ -603,16 +674,22 @@ fn agent_label(agent: &str) -> &str {
 }
 
 pub(super) fn provider_label(agent: &str, provider: &str) -> String {
+    let provider = match provider {
+        "anthropic" => "Anthropic",
+        "openai" | "openai-codex" => "OpenAI",
+        "xai" | "xai-auth" => "xAI",
+        "google" => "Google",
+        "github-copilot" => "GitHub Copilot",
+        "unknown" => "Unknown",
+        _ => provider,
+    };
+    if agent == "all" {
+        return provider.to_string();
+    }
     let agent = if agent == "pi" {
         "Pi"
     } else {
         agent_label(agent)
-    };
-    let provider = match provider {
-        "anthropic" => "Anthropic",
-        "openai-codex" => "OpenAI",
-        "xai-auth" => "xAI",
-        _ => provider,
     };
     format!("{agent}/{provider}")
 }

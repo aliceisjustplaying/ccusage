@@ -161,6 +161,7 @@ pub(super) fn to_loaded_entry(
         is_sidechain: None,
     };
     LoadedEntry {
+        provider: Some(entry.provider.clone()),
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("hermes"),

@@ -312,6 +312,7 @@ fn openclaw_entry_to_loaded(
     let missing_pricing_model =
         missing_pricing_model_for_usage(Some(&entry.model), usage, entry.cost, mode, pricing);
     LoadedEntry {
+        provider: entry.provider.clone(),
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("openclaw"),

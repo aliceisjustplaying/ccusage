@@ -667,6 +667,7 @@ mod tests {
         };
         let timestamp = TimestampMs::from_millis(fixture.timestamp);
         LoadedEntry {
+            provider: None,
             data: UsageEntry {
                 session_id: Some(fixture.session_id.to_string()),
                 timestamp: format_rfc3339_millis(timestamp),

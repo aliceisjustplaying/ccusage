@@ -100,6 +100,7 @@ fn usage_entry_to_loaded(
     let missing_pricing_model =
         missing_pricing_model_for_usage(Some(&entry.model), cost_usage, None, mode, Some(pricing));
     LoadedEntry {
+        provider: None,
         date: format_date_tz(entry.timestamp, tz),
         timestamp: entry.timestamp,
         project: Arc::from("copilot"),

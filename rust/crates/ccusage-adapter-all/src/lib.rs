@@ -39,16 +39,23 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
     let filters = loader::AllFilters {
         agent_selectors: &args.agent_selectors,
         model_patterns: &args.model_patterns,
+        by_provider: args.by_provider,
     };
     let shared = &args.shared;
     if let Some(sections) = args.sections.clone() {
         let sections = requested_sections(kind, sections);
-        let result = loader::load_sections(&sections, shared, filters)?;
+        let mut result = loader::load_sections(&sections, shared, filters)?;
+        if args.by_provider {
+            for (_, rows) in &mut result.sections {
+                *rows = types::group_rows_by_provider(std::mem::take(rows));
+            }
+        }
         if wants_json(shared) {
             return report::print_sections_report_json(
                 &result.sections,
                 kind,
                 include_agents,
+                args.by_provider,
                 shared.jq.as_deref(),
                 shared.no_cost,
             );
@@ -59,16 +66,36 @@ pub fn run(args: AgentCommandArgs) -> Result<()> {
                 *section_kind,
                 shared,
                 result.detected_agents_for(*section_kind),
+                args.by_provider,
+                args.summary,
             )?;
         }
         return Ok(());
     }
-    let result = loader::load_rows(kind, shared, filters)?;
+    let mut result = loader::load_rows(kind, shared, filters)?;
+    if args.summary {
+        result.rows = types::summarize_rows(result.rows);
+    }
+    if args.by_provider {
+        result.rows = types::group_rows_by_provider(result.rows);
+    }
     if wants_json(shared) {
-        let output = report::report_json_with_agents(&result.rows, kind, include_agents);
+        let output = report::report_json_with_breakdowns(
+            &result.rows,
+            kind,
+            include_agents,
+            args.by_provider,
+        );
         return print_json_or_jq(output, shared.jq.as_deref(), shared.no_cost);
     }
-    report::print_table(&result.rows, kind, shared, &result.detected_agents)
+    report::print_table(
+        &result.rows,
+        kind,
+        shared,
+        &result.detected_agents,
+        args.by_provider,
+        args.summary,
+    )
 }
 
 fn requested_sections(
@@ -97,10 +124,10 @@ use loader::{
 #[cfg(test)]
 use report::{
     all_report_title, all_table_columns, all_table_row, provider_label, report_json,
-    report_json_with_agents, sections_report_json,
+    report_json_with_agents, report_json_with_breakdowns, sections_report_json,
 };
 #[cfg(test)]
-use types::{AgentLoadSpec, AgentRows, AllRow};
+use types::{AgentLoadSpec, AgentRows, AllRow, group_rows_by_provider, summarize_rows};
 
 #[cfg(test)]
 mod tests;

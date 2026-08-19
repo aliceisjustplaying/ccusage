@@ -28,12 +28,13 @@ For automation, unified JSON reports can emit several report sections from one l
 ```bash
 ccusage daily --sections daily,monthly,session --json
 ccusage daily --by-agent --json
-ccusage daily --by-provider --json
+ccusage daily --by-provider
+ccusage daily -s 2026-08-09 --by-provider --summary --breakdown
 ```
 
 `--sections` accepts `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included, and table output prints each requested section as a separate table. `--by-agent` adds an `agents` array to daily, weekly, and monthly JSON rows; session rows are already source-specific.
 
-Unified tables split Pi-format sources into compact rows such as `Pi/Anthropic` and `Pi/OpenAI` by default. `--by-provider` includes those rows in unified JSON output with the exact provider ID in a `provider` field.
+Unified tables split Pi-format sources into compact rows such as `Pi/Anthropic` and `Pi/OpenAI` by default. `--by-provider` merges usage across harnesses using each record's provider ID. `--summary` collapses the selected date range into provider totals, and `--breakdown` adds model rows.
 
 Filter unified reports with comma-separated agent selectors and model globs:
 

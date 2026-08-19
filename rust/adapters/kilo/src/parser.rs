@@ -161,6 +161,7 @@ pub(super) fn message_value_to_entry(
         session_id: Arc::from(session_id),
         project_path: Arc::from("Kilo"),
         cost,
+        provider,
         extra_total_tokens,
         credits: None,
         model: Some(model),

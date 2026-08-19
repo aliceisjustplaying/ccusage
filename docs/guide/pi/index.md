@@ -83,7 +83,7 @@ ccusage daily --agent pi --by-provider --json
 ccusage daily --agent 'pi[openai-codex]' --model 'gpt-*'
 ```
 
-Pi assistant messages record `provider` alongside `model`. Unified reports group Pi-format rows by that provider by default. `--by-provider` exposes the rows in unified JSON, bracketed agent selectors filter them, and older records without a provider appear under `Pi/unknown`.
+Pi assistant messages record `provider` alongside `model`. Unified reports group Pi-format rows by that provider by default. `--by-provider` merges those rows with the same provider from other harnesses. Bracketed agent selectors filter Pi providers, and older records without provider metadata appear under `Pi/Unknown`.
 
 ## Environment Variables
 

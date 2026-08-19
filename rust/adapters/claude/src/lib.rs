@@ -290,6 +290,7 @@ fn read_usage_file(
         });
         let entry = LoadedEntry {
             data,
+            provider: Some("anthropic".to_string()),
             timestamp,
             date,
             project: Arc::clone(&project),
@@ -322,6 +323,7 @@ fn read_usage_file(
             );
             advisor_entries.push(LoadedEntry {
                 data: advisor_data,
+                provider: Some("anthropic".to_string()),
                 timestamp,
                 date: entry.date.clone(),
                 project: Arc::clone(&project),
@@ -818,6 +820,7 @@ mod tests {
             session_id: Arc::from("session-a"),
             project_path: Arc::from("project-a"),
             cost: 0.0,
+            provider: Some("anthropic".to_string()),
             extra_total_tokens: 0,
             credits: None,
             message_count: None,

@@ -72,6 +72,7 @@ pub(super) fn row_to_entry(
         missing_goose_pricing(&model, &provider_id, usage, reasoning_tokens, pricing);
 
     Some(LoadedEntry {
+        provider: Some(provider_id),
         date: format_date_tz(timestamp, tz),
         timestamp,
         project: Arc::from("goose"),

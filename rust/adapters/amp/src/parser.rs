@@ -202,6 +202,7 @@ fn parse_ledger_events(
             pricing,
         );
         entries.push(LoadedEntry {
+            provider: None,
             date: format_date_tz(timestamp, tz),
             timestamp,
             project: Arc::from("amp"),
@@ -310,6 +311,7 @@ fn parse_message_usage(
             pricing,
         );
         entries.push(LoadedEntry {
+            provider: None,
             date: format_date_tz(timestamp, tz),
             timestamp,
             project: Arc::from("amp"),

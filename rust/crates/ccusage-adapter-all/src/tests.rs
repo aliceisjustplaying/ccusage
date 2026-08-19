@@ -138,6 +138,115 @@ fn aggregates_daily_agent_rows_by_period() {
 }
 
 #[test]
+fn groups_usage_by_canonical_and_arbitrary_provider_across_agents() {
+    let make_row = |agent, provider: &str, model: &str, input_tokens| AllRow {
+        period: "2026-01-02".to_string(),
+        agent,
+        provider: Some(provider.to_string()),
+        models_used: vec![model.to_string()],
+        input_tokens,
+        output_tokens: 0,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+        total_tokens: input_tokens,
+        total_cost: input_tokens as f64 / 100.0,
+        metadata: None,
+        metadata_agents: Some(vec![agent]),
+        agent_breakdowns: None,
+        model_breakdowns: vec![ModelBreakdown {
+            model_name: model.to_string(),
+            input_tokens,
+            cost: input_tokens as f64 / 100.0,
+            ..ModelBreakdown::default()
+        }],
+    };
+    let rows = aggregate_rows(
+        vec![
+            make_row("codex", "openai", "gpt-5", 10),
+            make_row("pi", "openai-codex", "[pi] gpt-5", 20),
+            make_row("opencode", "together-ai", "llama-4", 30),
+            make_row("kilo", "together-ai", "[kilo] llama-4", 40),
+        ],
+        AgentReportKind::Daily,
+    );
+
+    let rows = group_rows_by_provider(rows);
+    let providers = rows[0].agent_breakdowns.as_ref().unwrap();
+
+    assert_eq!(providers.len(), 2);
+    assert_eq!(providers[0].provider.as_deref(), Some("openai"));
+    assert_eq!(providers[0].input_tokens, 30);
+    assert_eq!(providers[0].metadata_agents, Some(vec!["codex", "pi"]));
+    assert_eq!(providers[0].models_used, vec!["gpt-5"]);
+    assert_eq!(providers[0].model_breakdowns[0].input_tokens, 30);
+    assert_eq!(providers[1].provider.as_deref(), Some("together-ai"));
+    assert_eq!(providers[1].input_tokens, 70);
+    assert_eq!(providers[1].metadata_agents, Some(vec!["kilo", "opencode"]));
+    assert_eq!(providers[1].models_used, vec!["llama-4"]);
+
+    let report = report_json_with_breakdowns(&rows, AgentReportKind::Daily, true, true);
+    assert!(report["daily"][0].get("agents").is_none());
+    assert_eq!(report["daily"][0]["providers"][0]["provider"], "openai");
+}
+
+#[test]
+fn summarizes_provider_usage_across_the_selected_periods() {
+    let rows = [
+        ("2026-01-02", 10_u64, 1.0_f64),
+        ("2026-01-03", 20_u64, 2.0_f64),
+    ]
+    .into_iter()
+    .map(|(period, input_tokens, total_cost)| AllRow {
+        period: period.to_string(),
+        agent: "all",
+        provider: None,
+        models_used: vec!["gpt-5".to_string()],
+        input_tokens,
+        output_tokens: 0,
+        cache_creation_tokens: 0,
+        cache_read_tokens: 0,
+        total_tokens: input_tokens,
+        total_cost,
+        metadata: None,
+        metadata_agents: Some(vec!["codex"]),
+        agent_breakdowns: Some(vec![AllRow {
+            period: period.to_string(),
+            agent: "codex",
+            provider: Some("openai".to_string()),
+            models_used: vec!["gpt-5".to_string()],
+            input_tokens,
+            output_tokens: 0,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            total_tokens: input_tokens,
+            total_cost,
+            metadata: None,
+            metadata_agents: Some(vec!["codex"]),
+            agent_breakdowns: None,
+            model_breakdowns: vec![ModelBreakdown {
+                model_name: "gpt-5".to_string(),
+                input_tokens,
+                cost: total_cost,
+                ..ModelBreakdown::default()
+            }],
+        }]),
+        model_breakdowns: Vec::new(),
+    })
+    .collect();
+
+    let rows = group_rows_by_provider(summarize_rows(rows));
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].period, "Summary");
+    assert_eq!(rows[0].input_tokens, 30);
+    assert_eq!(rows[0].total_cost, 3.0);
+    let openai = &rows[0].agent_breakdowns.as_ref().unwrap()[0];
+    assert_eq!(openai.provider.as_deref(), Some("openai"));
+    assert_eq!(openai.input_tokens, 30);
+    assert_eq!(openai.model_breakdowns[0].input_tokens, 30);
+}
+
+#[test]
 fn merges_same_agent_daily_rows_into_one_monthly_breakdown() {
     let rows = aggregate_rows(
         vec![
@@ -599,6 +708,7 @@ fn filters_pi_provider_and_model_with_agent_selector() {
         AllFilters {
             agent_selectors: &selectors,
             model_patterns: &models,
+            by_provider: false,
         },
     )
     .unwrap();
@@ -1062,7 +1172,8 @@ fn provider_breakdown_table_labels_shorten_known_pi_providers() {
     assert_eq!(provider_label("pi", "anthropic"), "Pi/Anthropic");
     assert_eq!(provider_label("pi", "openai-codex"), "Pi/OpenAI");
     assert_eq!(provider_label("pi", "xai-auth"), "Pi/xAI");
-    assert_eq!(provider_label("pi", "unknown"), "Pi/unknown");
+    assert_eq!(provider_label("pi", "unknown"), "Pi/Unknown");
+    assert_eq!(provider_label("all", "openai"), "OpenAI");
 }
 
 #[test]
@@ -1092,7 +1203,7 @@ fn all_report_title_lists_detected_agents() {
 
 #[test]
 fn compact_table_columns_omit_cache_and_total_token_metrics() {
-    let (headers, aligns) = all_table_columns(AgentReportKind::Daily, true, false);
+    let (headers, aligns) = all_table_columns(AgentReportKind::Daily, true, false, false);
 
     assert_eq!(
         headers,
@@ -1113,7 +1224,7 @@ fn compact_table_columns_omit_cache_and_total_token_metrics() {
 
 #[test]
 fn full_table_columns_include_cache_and_total_token_metrics() {
-    let (headers, aligns) = all_table_columns(AgentReportKind::Daily, false, false);
+    let (headers, aligns) = all_table_columns(AgentReportKind::Daily, false, false, false);
 
     assert_eq!(
         headers,

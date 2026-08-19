@@ -143,6 +143,7 @@ pub fn message_value_to_entry(
         .clone()
         .unwrap_or_else(|| "unknown".to_string());
     Some(LoadedEntry {
+        provider: Some(provider),
         date: format_date_tz(timestamp, tz),
         timestamp,
         project: Arc::from("opencode"),

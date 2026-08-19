@@ -420,6 +420,40 @@ fn parses_unified_agent_provider_and_model_selectors() {
 }
 
 #[test]
+fn parses_provider_summary_from_a_since_date() {
+    let cli = parse(&[
+        "ccusage",
+        "daily",
+        "-s",
+        "2026-08-09",
+        "--by-provider",
+        "--summary",
+        "--breakdown",
+    ]);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected all-agent command");
+    };
+
+    assert_eq!(args.shared.since.as_deref(), Some("20260809"));
+    assert!(args.by_provider);
+    assert!(args.summary);
+    assert!(args.shared.breakdown);
+}
+
+#[test]
+fn rejects_summary_with_sections() {
+    let error = parse_error(&[
+        "ccusage",
+        "daily",
+        "--summary",
+        "--sections",
+        "daily,monthly",
+    ]);
+
+    assert_eq!(error, "--summary cannot be used with --sections.");
+}
+
+#[test]
 fn parses_root_sections_and_by_agent_flags_without_daily_token() {
     let cli = parse(&[
         "ccusage",

@@ -103,6 +103,7 @@ mod tests {
             session_id: Arc::from("session-1"),
             project_path: Arc::from("Hermes"),
             cost: 0.34,
+            provider: Some("anthropic".to_string()),
             credits: None,
             extra_total_tokens: 10,
             message_count: Some(42),

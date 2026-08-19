@@ -117,6 +117,7 @@ mod tests {
             session_id: Arc::from(session_id),
             project_path: Arc::from(project_path),
             cost: 0.0113,
+            provider: Some("xai".to_string()),
             credits: None,
             model: Some("grok-4.5-build".to_string()),
             usage_limit_reset_time: None,

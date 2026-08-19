@@ -172,6 +172,7 @@ pub struct AgentCommandArgs {
     pub sections: Option<Vec<AgentReportKind>>,
     pub by_agent: bool,
     pub by_provider: bool,
+    pub summary: bool,
     pub agent_selectors: Vec<AgentSelector>,
     pub model_patterns: Vec<String>,
     pub pi_path: Option<String>,

@@ -22,6 +22,7 @@ struct RootAllOptions {
     sections: Option<Vec<AgentReportKind>>,
     by_agent: bool,
     by_provider: bool,
+    summary: bool,
     agent_selectors: Vec<AgentSelector>,
     model_patterns: Vec<String>,
     first_flag: Option<&'static str>,
@@ -44,6 +45,7 @@ impl RootAllOptions {
         self.sections.is_some()
             || self.by_agent
             || self.by_provider
+            || self.summary
             || !self.agent_selectors.is_empty()
             || !self.model_patterns.is_empty()
     }
@@ -55,6 +57,7 @@ impl RootAllOptions {
             sections: self.sections,
             by_agent: self.by_agent,
             by_provider: self.by_provider,
+            summary: self.summary,
             agent_selectors: self.agent_selectors,
             model_patterns: self.model_patterns,
             pi_path: None,
@@ -393,6 +396,11 @@ fn parse_unified_report_arg(
         options.by_provider = true;
         return Ok(Some("--by-provider"));
     }
+    if matches!(parser.peek(), Some("--summary")) {
+        parser.next();
+        options.summary = true;
+        return Ok(Some("--summary"));
+    }
     if matches!(parser.peek_name(), Some("--agent")) {
         parser.next_flag()?;
         options
@@ -425,12 +433,16 @@ fn parse_all_command(
         }
         parse_shared_arg(parser, &mut shared)?;
     }
+    if options.summary && options.sections.is_some() {
+        return Err("--summary cannot be used with --sections.".to_string());
+    }
     Ok(Command::All(AgentCommandArgs {
         shared,
         kind,
         sections: options.sections,
         by_agent: options.by_agent,
         by_provider: options.by_provider,
+        summary: options.summary,
         agent_selectors: options.agent_selectors,
         model_patterns: options.model_patterns,
         pi_path: None,
@@ -460,6 +472,10 @@ fn parse_top_level_session_command(
         }
     }
 
+    if options.summary && options.sections.is_some() {
+        return Err("--summary cannot be used with --sections.".to_string());
+    }
+
     if args.id.is_some() {
         if options.has_report_options() {
             return Err("Unified report options cannot be used with session --id.".to_string());
@@ -473,6 +489,7 @@ fn parse_top_level_session_command(
         sections: options.sections,
         by_agent: options.by_agent,
         by_provider: options.by_provider,
+        summary: options.summary,
         agent_selectors: options.agent_selectors,
         model_patterns: options.model_patterns,
         pi_path: None,
@@ -633,6 +650,7 @@ fn parse_codex_command(
         sections: None,
         by_agent: false,
         by_provider: false,
+        summary: false,
         agent_selectors: Vec::new(),
         model_patterns: Vec::new(),
         pi_path: None,
@@ -665,6 +683,7 @@ fn parse_pi_command(
         sections: None,
         by_agent: false,
         by_provider: false,
+        summary: false,
         agent_selectors: Vec::new(),
         model_patterns: Vec::new(),
         pi_path,
@@ -697,6 +716,7 @@ fn parse_openclaw_command(
         sections: None,
         by_agent: false,
         by_provider: false,
+        summary: false,
         agent_selectors: Vec::new(),
         model_patterns: Vec::new(),
         pi_path: None,
@@ -730,6 +750,7 @@ fn agent_command_args(shared: SharedArgs, kind: AgentReportKind) -> AgentCommand
         sections: None,
         by_agent: false,
         by_provider: false,
+        summary: false,
         agent_selectors: Vec::new(),
         model_patterns: Vec::new(),
         pi_path: None,

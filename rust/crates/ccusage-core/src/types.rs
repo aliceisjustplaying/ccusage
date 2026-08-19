@@ -108,6 +108,7 @@ pub struct ModelBreakdown {
 #[derive(Debug, Clone)]
 pub struct LoadedEntry {
     pub data: UsageEntry,
+    pub provider: Option<String>,
     pub timestamp: TimestampMs,
     pub date: String,
     pub project: Arc<str>,

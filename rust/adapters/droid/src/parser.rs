@@ -14,7 +14,7 @@ pub(super) struct DroidEntry {
     pub(super) timestamp_text: String,
     pub(super) session_id: String,
     pub(super) model: String,
-    provider: String,
+    pub(super) provider: String,
     pub(super) usage: TokenUsageRaw,
     pub(super) reasoning_tokens: u64,
 }

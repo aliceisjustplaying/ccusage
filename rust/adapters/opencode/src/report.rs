@@ -212,6 +212,7 @@ mod tests {
             session_id: Arc::from(session_id),
             project_path: Arc::from("/workspace/api"),
             cost: 0.0,
+            provider: Some("openai".to_string()),
             extra_total_tokens: 0,
             credits: None,
             message_count: Some(1),

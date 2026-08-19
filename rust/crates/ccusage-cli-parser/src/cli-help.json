@@ -94,7 +94,12 @@
 		},
 		{
 			"flags": "--by-provider",
-			"description": "Include Pi provider rows in unified JSON output",
+			"description": "Group unified usage across harnesses by provider",
+			"default": "false"
+		},
+		{
+			"flags": "--summary",
+			"description": "Collapse the selected date range into one total",
 			"default": "false"
 		},
 		{

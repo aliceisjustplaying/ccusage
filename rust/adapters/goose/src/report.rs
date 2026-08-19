@@ -111,6 +111,7 @@ mod tests {
             session_id: Arc::from("session-a"),
             project_path: Arc::from("Goose"),
             cost: 0.02,
+            provider: Some("anthropic".to_string()),
             credits: None,
             model: Some("claude-sonnet-4-20250514".to_string()),
             usage_limit_reset_time: None,

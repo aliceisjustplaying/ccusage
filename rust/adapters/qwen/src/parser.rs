@@ -193,6 +193,7 @@ fn parse_line(
         is_sidechain: None,
     };
     Some(LoadedEntry {
+        provider: Some("qwen".to_string()),
         data,
         timestamp,
         date: format_date_tz(timestamp, tz),
@@ -388,6 +389,7 @@ mod tests {
             session_id: Arc::from("session:1"),
             project_path: Arc::from("project"),
             cost: 0.0,
+            provider: Some("qwen".to_string()),
             extra_total_tokens: 4,
             credits: None,
             message_count: None,

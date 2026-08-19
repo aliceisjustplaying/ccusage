@@ -25,7 +25,7 @@ pub(super) struct CodebuffEntry {
     pub(super) timestamp_text: String,
     pub(super) session_id: String,
     pub(super) model: String,
-    provider: String,
+    pub(super) provider: String,
     pub(super) credits: f64,
     pub(super) usage: TokenUsageRaw,
     pub(super) extra_total_tokens: u64,

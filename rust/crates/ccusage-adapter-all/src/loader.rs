@@ -22,13 +22,14 @@ use crate::{
 pub(super) struct AllFilters<'a> {
     pub(super) agent_selectors: &'a [AgentSelector],
     pub(super) model_patterns: &'a [String],
+    pub(super) by_provider: bool,
 }
 
 use super::{
     report::sort_rows,
     types::{
         AgentLoadSpec, AgentRows, AllAccumulator, AllLoadResult, AllRow, AllSectionsLoadResult,
-        LoadedAgentRows,
+        LoadedAgentRows, canonical_provider_id,
     },
 };
 
@@ -130,13 +131,26 @@ fn load_base_rows(
             index: 0,
             agent: BUILT_IN_AGENT_NAMES[0],
             progress_agent: crate::progress::UsageLoadAgent("Claude"),
-            load: Box::new(|| load_claude_rows(load_kind, &loader_shared)),
+            load: Box::new(|| {
+                load_claude_rows(
+                    load_kind,
+                    &loader_shared,
+                    filters.needs_provider_rows("claude"),
+                )
+            }),
         },
         AgentLoadSpec {
             index: 1,
             agent: BUILT_IN_AGENT_NAMES[1],
             progress_agent: crate::progress::UsageLoadAgent("Codex"),
-            load: Box::new(|| load_codex_rows(load_kind, &loader_shared, pricing)),
+            load: Box::new(|| {
+                load_codex_rows(
+                    load_kind,
+                    &loader_shared,
+                    pricing,
+                    filters.needs_provider_rows("codex"),
+                )
+            }),
         },
         AgentLoadSpec {
             index: 2,
@@ -149,6 +163,7 @@ fn load_base_rows(
                     &loader_shared,
                     || opencode::load_entries(&loader_shared),
                     opencode::summarize_entries,
+                    filters.needs_provider_rows("opencode"),
                 )?;
                 // The OpenCode loader narrows to the date window as it reads, so
                 // an out-of-range query yields no entries and the usual
@@ -170,6 +185,7 @@ fn load_base_rows(
                     pricing,
                     amp::load_entries,
                     amp::summarize_entries,
+                    filters.needs_provider_rows("amp"),
                 )
             }),
         },
@@ -185,6 +201,7 @@ fn load_base_rows(
                     pricing,
                     droid::load_entries,
                     droid::summarize_entries,
+                    filters.needs_provider_rows("droid"),
                 )
             }),
         },
@@ -200,6 +217,7 @@ fn load_base_rows(
                     pricing,
                     codebuff::load_entries,
                     codebuff::summarize_entries,
+                    filters.needs_provider_rows("codebuff"),
                 )
             }),
         },
@@ -215,6 +233,7 @@ fn load_base_rows(
                     pricing,
                     hermes::load_entries,
                     hermes::summarize_entries,
+                    filters.needs_provider_rows("hermes"),
                 )
             }),
         },
@@ -238,6 +257,7 @@ fn load_base_rows(
                     pricing,
                     goose::load_entries,
                     goose::summarize_entries,
+                    filters.needs_provider_rows("goose"),
                 )
             }),
         },
@@ -252,6 +272,7 @@ fn load_base_rows(
                     &loader_shared,
                     || openclaw::load_entries(&loader_shared, None, Some(pricing)),
                     openclaw::summarize_entries,
+                    filters.needs_provider_rows("openclaw"),
                 )
             }),
         },
@@ -267,6 +288,7 @@ fn load_base_rows(
                     pricing,
                     kilo::load_entries,
                     kilo::summarize_entries,
+                    filters.needs_provider_rows("kilo"),
                 )
             }),
         },
@@ -282,6 +304,7 @@ fn load_base_rows(
                     pricing,
                     copilot::load_entries,
                     copilot::summarize_entries,
+                    filters.needs_provider_rows("copilot"),
                 )
             }),
         },
@@ -297,6 +320,7 @@ fn load_base_rows(
                     pricing,
                     gemini::load_entries,
                     gemini::summarize_entries,
+                    filters.needs_provider_rows("gemini"),
                 )
             }),
         },
@@ -312,6 +336,7 @@ fn load_base_rows(
                     pricing,
                     kimi::load_entries,
                     kimi::summarize_entries,
+                    filters.needs_provider_rows("kimi"),
                 )
             }),
         },
@@ -319,7 +344,13 @@ fn load_base_rows(
             index: 14,
             agent: BUILT_IN_AGENT_NAMES[14],
             progress_agent: crate::progress::UsageLoadAgent("Qwen"),
-            load: Box::new(|| load_qwen_rows(load_kind, &loader_shared)),
+            load: Box::new(|| {
+                load_qwen_rows(
+                    load_kind,
+                    &loader_shared,
+                    filters.needs_provider_rows("qwen"),
+                )
+            }),
         },
         AgentLoadSpec {
             index: 15,
@@ -332,6 +363,7 @@ fn load_base_rows(
                     &loader_shared,
                     || grok::load_entries(&loader_shared, pricing),
                     grok::summarize_entries,
+                    filters.needs_provider_rows("grok"),
                 )?;
                 rows.detected = rows.detected || grok::has_data();
                 Ok(rows)
@@ -382,6 +414,13 @@ fn load_base_rows(
 }
 
 impl AllFilters<'_> {
+    fn needs_provider_rows(self, agent: &str) -> bool {
+        self.by_provider
+            || self.agent_selectors.iter().any(|selector| {
+                selector.provider.is_some() && wildcard_match(&selector.agent, agent)
+            })
+    }
+
     fn matches_agent(self, agent: &str) -> bool {
         self.agent_selectors.is_empty()
             || self
@@ -395,9 +434,13 @@ impl AllFilters<'_> {
             || self.agent_selectors.iter().any(|selector| {
                 wildcard_match(&selector.agent, row.agent)
                     && selector.provider.as_ref().is_none_or(|provider| {
-                        row.provider
-                            .as_deref()
-                            .is_some_and(|candidate| wildcard_match(provider, candidate))
+                        row.provider.as_deref().is_some_and(|candidate| {
+                            wildcard_match(provider, candidate)
+                                || wildcard_match(
+                                    &canonical_provider_id(provider),
+                                    &canonical_provider_id(candidate),
+                                )
+                        })
                     })
             })
     }
@@ -555,16 +598,90 @@ fn load_summary_agent_rows(
     kind: AgentReportKind,
     shared: &SharedArgs,
     load_entries: impl FnOnce() -> Result<Vec<LoadedEntry>>,
-    summarize_entries: impl FnOnce(&[LoadedEntry], AgentReportKind) -> Result<Vec<UsageSummary>>,
+    summarize_entries: impl Fn(&[LoadedEntry], AgentReportKind) -> Result<Vec<UsageSummary>>,
+    split_by_provider: bool,
 ) -> Result<AgentRows> {
     let mut entries = load_entries()?;
     let detected = !entries.is_empty();
     filter_loaded_entries_by_date(&mut entries, shared);
+    if split_by_provider {
+        return provider_summary_rows(agent, kind, entries, summarize_entries, detected);
+    }
     let summaries = summarize_entries(&entries, kind)?;
     Ok(AgentRows {
         rows: summary_rows(agent, summaries, false),
         detected,
     })
+}
+
+fn provider_summary_rows(
+    agent: &'static str,
+    kind: AgentReportKind,
+    entries: Vec<LoadedEntry>,
+    summarize_entries: impl Fn(&[LoadedEntry], AgentReportKind) -> Result<Vec<UsageSummary>>,
+    detected: bool,
+) -> Result<AgentRows> {
+    let mut grouped = BTreeMap::<String, Vec<LoadedEntry>>::new();
+    for entry in entries {
+        let provider = provider_for_entry(&entry);
+        grouped.entry(provider).or_default().push(entry);
+    }
+    let mut rows = Vec::new();
+    for (provider, entries) in grouped {
+        rows.extend(summary_rows_with_provider(
+            agent,
+            summarize_entries(&entries, kind)?,
+            false,
+            Some(provider),
+        ));
+    }
+    Ok(AgentRows { rows, detected })
+}
+
+fn provider_for_entry(entry: &LoadedEntry) -> String {
+    entry
+        .provider
+        .as_deref()
+        .filter(|provider| !provider.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| entry.model.as_deref().and_then(infer_provider_from_model))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn infer_provider_from_model(model: &str) -> Option<String> {
+    let model = unprefixed_model_name(model).to_ascii_lowercase();
+    if let Some((provider, _)) = model.split_once('/') {
+        return (!provider.is_empty()).then(|| provider.to_string());
+    }
+    let provider = if model.starts_with("claude-") {
+        "anthropic"
+    } else if model.starts_with("gpt-")
+        || model.starts_with("chatgpt-")
+        || model.starts_with('o') && model[1..].starts_with(|c: char| c.is_ascii_digit())
+    {
+        "openai"
+    } else if model.starts_with("grok-") {
+        "xai"
+    } else if model.starts_with("gemini-") {
+        "google"
+    } else if model.starts_with("kimi-") || model.starts_with("moonshot-") {
+        "kimi"
+    } else if model.starts_with("qwen") {
+        "qwen"
+    } else if model.starts_with("deepseek-") {
+        "deepseek"
+    } else if model.starts_with("mistral-") || model.starts_with("codestral-") {
+        "mistral"
+    } else if model.starts_with("llama-") {
+        "meta"
+    } else if model.starts_with("glm-") {
+        "zai"
+    } else if model.starts_with("minimax-") {
+        "minimax"
+    } else {
+        return None;
+    };
+    Some(provider.to_string())
 }
 
 fn load_pi_format_agent_rows(
@@ -574,7 +691,7 @@ fn load_pi_format_agent_rows(
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
-    let entries = pi::load_entries_with_provider(shared, custom_path, Some(pricing))?;
+    let entries = pi::load_entries(shared, custom_path, Some(pricing))?;
     filtered_pi_provider_rows(agent, kind, shared, entries, true)
 }
 
@@ -586,7 +703,7 @@ fn load_named_pi_store_rows(
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
-    let entries = pi::load_entries_for_store_paths_with_provider(
+    let entries = pi::load_entries_for_store_paths(
         shared,
         vec![PathBuf::from(store_path)],
         agent,
@@ -602,8 +719,7 @@ fn load_named_pi_store_rows_from_paths(
     shared: &SharedArgs,
     pricing: &PricingMap,
 ) -> Result<AgentRows> {
-    let entries =
-        pi::load_entries_for_store_paths_with_provider(shared, store_paths, agent, Some(pricing))?;
+    let entries = pi::load_entries_for_store_paths(shared, store_paths, agent, Some(pricing))?;
     filtered_pi_provider_rows(agent, kind, shared, entries, true)
 }
 
@@ -611,7 +727,7 @@ fn filtered_pi_provider_rows(
     agent: &'static str,
     kind: AgentReportKind,
     shared: &SharedArgs,
-    mut entries: Vec<pi::PiEntry>,
+    mut entries: Vec<LoadedEntry>,
     include_project_path: bool,
 ) -> Result<AgentRows> {
     let detected = !entries.is_empty();
@@ -626,9 +742,10 @@ fn filtered_pi_provider_rows(
     for entry in entries {
         let provider = entry
             .provider
+            .clone()
             .filter(|provider| !provider.trim().is_empty())
             .unwrap_or_else(|| "unknown".to_string());
-        providers.entry(provider).or_default().push(entry.entry);
+        providers.entry(provider).or_default().push(entry);
     }
     let mut rows = Vec::new();
     for (provider, entries) in providers {
@@ -647,14 +764,23 @@ fn filtered_pi_provider_rows(
     Ok(AgentRows { rows, detected })
 }
 
-fn load_claude_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRows> {
+fn load_claude_rows(
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+    split_by_provider: bool,
+) -> Result<AgentRows> {
     if kind == AgentReportKind::Session {
         let entries = claude::load_entries(shared, None)?;
         let detected = !entries.is_empty();
         let mut summaries = summarize_entry_sessions(&entries)?;
         filter_session_summaries(&mut summaries, shared);
         return Ok(AgentRows {
-            rows: summary_rows("claude", summaries, false),
+            rows: summary_rows_with_provider(
+                "claude",
+                summaries,
+                false,
+                split_by_provider.then(|| "anthropic".to_string()),
+            ),
             detected,
         });
     }
@@ -663,7 +789,12 @@ fn load_claude_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentR
     let detected = !summaries.is_empty();
     filter_daily_summaries_by_date(&mut summaries, shared);
     Ok(AgentRows {
-        rows: summary_rows("claude", summaries, false),
+        rows: summary_rows_with_provider(
+            "claude",
+            summaries,
+            false,
+            split_by_provider.then(|| "anthropic".to_string()),
+        ),
         detected,
     })
 }
@@ -683,6 +814,7 @@ fn load_codex_rows(
     kind: AgentReportKind,
     shared: &SharedArgs,
     pricing: &PricingMap,
+    split_by_provider: bool,
 ) -> Result<AgentRows> {
     if shared.since.is_none() && shared.until.is_none() {
         let groups = codex::load_groups(shared, kind)?;
@@ -691,7 +823,11 @@ fn load_codex_rows(
         return Ok(AgentRows {
             rows: groups
                 .iter()
-                .map(|(period, group)| codex_group_row(period, group, pricing, speed))
+                .map(|(period, group)| {
+                    let mut row = codex_group_row(period, group, pricing, speed);
+                    row.provider = split_by_provider.then(|| "openai".to_string());
+                    row
+                })
                 .collect(),
             detected,
         });
@@ -705,7 +841,11 @@ fn load_codex_rows(
     Ok(AgentRows {
         rows: groups
             .iter()
-            .map(|(period, group)| codex_group_row(period, group, pricing, speed))
+            .map(|(period, group)| {
+                let mut row = codex_group_row(period, group, pricing, speed);
+                row.provider = split_by_provider.then(|| "openai".to_string());
+                row
+            })
             .collect(),
         detected,
     })
@@ -717,7 +857,8 @@ fn load_priced_summary_agent_rows(
     shared: &SharedArgs,
     pricing: &PricingMap,
     load_entries: impl FnOnce(&SharedArgs, &PricingMap) -> Result<Vec<LoadedEntry>>,
-    summarize_entries: impl FnOnce(&[LoadedEntry], AgentReportKind) -> Result<Vec<UsageSummary>>,
+    summarize_entries: impl Fn(&[LoadedEntry], AgentReportKind) -> Result<Vec<UsageSummary>>,
+    split_by_provider: bool,
 ) -> Result<AgentRows> {
     load_summary_agent_rows(
         agent,
@@ -725,24 +866,39 @@ fn load_priced_summary_agent_rows(
         shared,
         || load_entries(shared, pricing),
         summarize_entries,
+        split_by_provider,
     )
 }
 
-fn load_qwen_rows(kind: AgentReportKind, shared: &SharedArgs) -> Result<AgentRows> {
+fn load_qwen_rows(
+    kind: AgentReportKind,
+    shared: &SharedArgs,
+    split_by_provider: bool,
+) -> Result<AgentRows> {
     let mut entries = qwen::load_entries(shared)?;
     let detected = !entries.is_empty() || qwen::has_data();
     if kind == AgentReportKind::Session {
         let mut summaries = qwen::summarize_entries(&entries, kind)?;
         filter_session_summaries(&mut summaries, shared);
         return Ok(AgentRows {
-            rows: summary_rows("qwen", summaries, false),
+            rows: summary_rows_with_provider(
+                "qwen",
+                summaries,
+                false,
+                split_by_provider.then(|| "qwen".to_string()),
+            ),
             detected,
         });
     }
     filter_loaded_entries_by_date(&mut entries, shared);
     let summaries = qwen::summarize_entries(&entries, kind)?;
     Ok(AgentRows {
-        rows: summary_rows("qwen", summaries, false),
+        rows: summary_rows_with_provider(
+            "qwen",
+            summaries,
+            false,
+            split_by_provider.then(|| "qwen".to_string()),
+        ),
         detected,
     })
 }
@@ -1591,5 +1747,22 @@ mod tests {
                 ("pi", ["[pi] gpt-5".to_string()].as_slice()),
             ]
         );
+    }
+
+    #[test]
+    fn infers_common_model_providers_without_hiding_unknown_models() {
+        assert_eq!(
+            infer_provider_from_model("[amp] gpt-5"),
+            Some("openai".to_string())
+        );
+        assert_eq!(
+            infer_provider_from_model("anthropic/claude-sonnet-4"),
+            Some("anthropic".to_string())
+        );
+        assert_eq!(
+            infer_provider_from_model("vendor/model"),
+            Some("vendor".to_string())
+        );
+        assert_eq!(infer_provider_from_model("custom-model"), None);
     }
 }

@@ -165,14 +165,17 @@ ccusage daily --sections daily,monthly,session --json
 # Add per-agent breakdowns to daily, weekly, and monthly JSON rows
 ccusage daily --by-agent --json
 
-# Include Pi provider rows in unified JSON output
-ccusage daily --by-provider --json
+# Merge usage across harnesses by provider
+ccusage daily --by-provider
+
+# Total provider and model usage from a date through now
+ccusage daily -s 2026-08-09 --by-provider --summary --breakdown
 
 # Select agents, scoped providers, and model globs
 ccusage daily --agent 'codex,pi[openai-codex]' --model 'gpt-*'
 ```
 
-`--sections` accepts a comma-separated list of `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included. For table output, each requested section is printed as a separate table, with Pi-format rows grouped by message provider by default. `--by-agent` is JSON-only; session rows are already per-agent. `--by-provider` includes Pi provider rows in unified JSON output. `--agent` accepts comma-separated `agent` or `agent[provider]` selectors, while `--model` accepts comma-separated `*` and `?` glob patterns.
+`--sections` accepts a comma-separated list of `daily`, `weekly`, `monthly`, and `session`. The invoked report section is always included. `--by-agent` is JSON-only; session rows are already per-agent. `--by-provider` merges recorded provider IDs across every harness. IDs are open-ended; known aliases such as `openai-codex` and `xai-auth` are combined with `openai` and `xai`. `--summary` collapses the selected range into one total and cannot be combined with `--sections`. `--agent` accepts comma-separated `agent` or `agent[provider]` selectors, while `--model` accepts comma-separated `*` and `?` glob patterns.
 
 ### Daily Command
 

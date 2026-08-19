@@ -179,6 +179,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].provider.as_deref(), Some("anthropic"));
         assert_eq!(entries[0].date, "2025-06-15");
         assert_eq!(entries[0].session_id.as_ref(), "session-1");
         assert_eq!(

@@ -92,6 +92,7 @@ mod tests {
             sections: None,
             by_agent: false,
             by_provider: false,
+            summary: false,
             agent_selectors: Vec::new(),
             model_patterns: Vec::new(),
             pi_path: None,

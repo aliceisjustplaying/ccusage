@@ -142,6 +142,7 @@ bunx ccusage daily --all
 bunx ccusage daily --sections daily,monthly,session --json
 bunx ccusage daily --by-agent --json
 bunx ccusage daily --by-provider --json
+bunx ccusage daily -s 2026-08-09 --by-provider --summary --breakdown
 bunx ccusage daily --agent 'codex,pi[openai-codex]' --model 'gpt-*'
 
 # Filters and options
