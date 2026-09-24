@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
@@ -41,16 +41,37 @@ pub fn summarize_entries(
             ))
         }
         AgentReportKind::Session => {
+            let mut providers_by_session = BTreeMap::<&str, BTreeSet<Option<&str>>>::new();
+            for entry in entries {
+                providers_by_session
+                    .entry(entry.session_id.as_ref())
+                    .or_default()
+                    .insert(entry.data.version.as_deref());
+            }
+
             let mut groups = BTreeMap::<String, SessionAccumulator>::new();
             for entry in entries {
-                groups
-                    .entry(entry.session_id.to_string())
-                    .or_default()
-                    .add_entry(entry);
+                let session_id = if providers_by_session
+                    .get(entry.session_id.as_ref())
+                    .is_some_and(|providers| providers.len() > 1)
+                {
+                    format!(
+                        "{}@{}",
+                        entry.session_id,
+                        entry.data.version.as_deref().unwrap_or("unknown")
+                    )
+                } else {
+                    entry.session_id.to_string()
+                };
+                groups.entry(session_id).or_default().add_entry(entry);
             }
             groups
-                .into_values()
-                .map(|group| group.into_summary())
+                .into_iter()
+                .map(|(session_id, group)| {
+                    let mut summary = group.into_summary()?;
+                    summary.session_id = Some(session_id);
+                    Ok(summary)
+                })
                 .collect()
         }
         AgentReportKind::Weekly => {

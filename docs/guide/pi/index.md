@@ -296,6 +296,12 @@ Sessions are sorted by last activity:
 
 Sessions are identified by the project folder name from `~/.pi/agent/sessions/{project}/`.
 
+Provider metadata is included in model identities as `[pi] provider/model`, so
+the same model served by different providers has separate model breakdowns. If
+one session contains usage from multiple providers, the session report emits a
+separate row for each provider and identifies it as `<session-id>@<provider>`.
+Sessions with zero or one provider retain their original session ID.
+
 Long project names are truncated to 25 characters with `...` suffix for readability.
 
 ### JSON Output

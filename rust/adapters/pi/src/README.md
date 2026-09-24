@@ -22,6 +22,12 @@ prefixed or bare model name recalculates cost from tokens, even when the session
 contains a display cost of zero. Without an override, Auto keeps a valid stored
 cost and calculates from tokens only when that cost is missing or invalid.
 
+Pi assistant messages may identify both a provider and a model. ccusage keeps
+those combinations distinct as `[pi] provider/model` model names. When one Pi
+session contains usage from multiple providers, the session report emits one
+row per provider and suffixes the row's session ID with `@provider`; sessions
+with zero or one provider keep their existing session ID.
+
 Forked session files may replay the usage history of their parent. For Pi's
 tree-format sessions, the parent candidate follows the root-to-leaf path ending
 at the final physical entry rather than physical JSONL order; abandoned sibling

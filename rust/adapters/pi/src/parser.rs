@@ -55,6 +55,8 @@ struct PiMessage {
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     role: Option<String>,
     #[serde(default, deserialize_with = "jsonl::non_empty_string")]
+    provider: Option<String>,
+    #[serde(default, deserialize_with = "jsonl::non_empty_string")]
     model: Option<String>,
     usage: Option<PiUsage>,
 }
@@ -350,8 +352,14 @@ fn read_session_file_data_with_context(
             continue;
         }
         let raw_model = message.model.clone();
+        let provider = message.provider.clone();
+        let qualified_model = raw_model.as_ref().map(|model| {
+            provider
+                .as_ref()
+                .map_or_else(|| model.clone(), |provider| format!("{provider}/{model}"))
+        });
         let display_cost = usage_value.cost.as_ref().and_then(|cost| cost.total);
-        let model = raw_model
+        let model = qualified_model
             .as_ref()
             .map(|model| format!("[{}] {model}", context.store_name()));
         let cost = context.cost(
@@ -368,7 +376,7 @@ fn read_session_file_data_with_context(
         usage_records.push(PiUsageRecord {
             signature: PiUsageSignature {
                 timestamp,
-                model: raw_model.clone(),
+                model: qualified_model,
                 input_tokens: usage.input_tokens,
                 output_tokens: usage.output_tokens,
                 cache_creation_input_tokens: usage.cache_creation_input_tokens,
@@ -390,7 +398,7 @@ fn read_session_file_data_with_context(
         let data = UsageEntry {
             session_id: Some(session_id.clone()),
             timestamp: timestamp_text,
-            version: None,
+            version: provider,
             message: UsageMessage {
                 usage,
                 model: model.clone(),
@@ -857,6 +865,48 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].data.message.usage.output_tokens, 333);
         assert_eq!(entries[0].extra_total_tokens, 0);
+    }
+
+    #[test]
+    fn separates_multi_provider_session_usage() {
+        let fixture = fs_fixture!({
+            "sessions/project-a/agent_session-a.jsonl": [
+                r#"{"type":"message","timestamp":"2026-01-02T00:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{"input":100,"output":20}}}"#,
+                r#"{"type":"message","timestamp":"2026-01-02T00:01:00.000Z","message":{"role":"assistant","provider":"opencode","model":"gpt-5.6-sol","usage":{"input":200,"output":40}}}"#,
+            ]
+            .join("\n"),
+        });
+        let file = fixture.path("sessions/project-a/agent_session-a.jsonl");
+
+        let entries = read_session_file(&file, None, CostMode::Display, None).unwrap();
+        let rows = crate::report::summarize_entries(&entries, crate::cli::AgentReportKind::Session)
+            .unwrap();
+        let actual = rows
+            .iter()
+            .map(|row| {
+                (
+                    row.session_id.clone().unwrap_or_default(),
+                    row.models_used.clone(),
+                    row.input_tokens,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            actual,
+            vec![
+                (
+                    "session-a@openai-codex".to_string(),
+                    vec!["[pi] openai-codex/gpt-5.6-sol".to_string()],
+                    100,
+                ),
+                (
+                    "session-a@opencode".to_string(),
+                    vec!["[pi] opencode/gpt-5.6-sol".to_string()],
+                    200,
+                ),
+            ]
+        );
     }
 
     #[test]
