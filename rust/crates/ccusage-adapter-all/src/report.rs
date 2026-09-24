@@ -134,6 +134,13 @@ fn row_json(row: &AllRow, include_agents: bool) -> Value {
     let mut value = agent_json(row);
     if let Some(obj) = value.as_object_mut() {
         obj.insert("period".to_string(), json!(row.period));
+        if let Some(provider) = row
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("provider"))
+        {
+            obj.insert("provider".to_string(), provider.clone());
+        }
     }
     if let (Some(obj), Some(agents)) = (value.as_object_mut(), row.metadata_agents.as_ref()) {
         obj.insert(
@@ -145,14 +152,25 @@ fn row_json(row: &AllRow, include_agents: bool) -> Value {
     } else if let (Some(obj), Some(metadata)) = (value.as_object_mut(), row.metadata.as_ref()) {
         obj.insert("metadata".to_string(), metadata.clone());
     }
-    if include_agents
-        && let (Some(obj), Some(agent_breakdowns)) =
-            (value.as_object_mut(), row.agent_breakdowns.as_ref())
+    if let (Some(obj), Some(agent_breakdowns)) =
+        (value.as_object_mut(), row.agent_breakdowns.as_ref())
     {
-        obj.insert(
-            "agents".to_string(),
-            Value::Array(agent_breakdowns.iter().map(agent_json).collect()),
-        );
+        if row.agent != "all" {
+            obj.insert(
+                "providers".to_string(),
+                Value::Array(
+                    agent_breakdowns
+                        .iter()
+                        .map(|provider| row_json(provider, false))
+                        .collect(),
+                ),
+            );
+        } else if include_agents {
+            obj.insert(
+                "agents".to_string(),
+                Value::Array(agent_breakdowns.iter().map(agent_json).collect()),
+            );
+        }
     }
     value
 }
@@ -230,16 +248,30 @@ pub(super) fn print_table(
         terminal_width,
         crate::USAGE_COMPACT_WIDTH_THRESHOLD,
     );
-    let (headers, aligns) = all_table_columns(kind, compact, shared.no_cost);
+    let (mut headers, aligns) = all_table_columns(kind, compact, shared.no_cost);
+    if shared.by_provider {
+        headers[1] = "Agent\n/ Provider";
+    }
+    if shared.summary {
+        headers[0] = "Period";
+    }
     let mut table = SimpleTable::new(headers, aligns, crate::terminal_style(shared))
         .with_terminal_width(terminal_width)
         .with_date_compaction(true);
 
     for row in rows {
-        table.push(all_table_row(row, compact, false, shared.no_cost));
+        let mut cells = all_table_row(row, compact, false, shared.no_cost);
+        if shared.by_provider && shared.breakdown {
+            cells[2].clear();
+        }
+        table.push(cells);
         if let Some(agent_breakdowns) = row.agent_breakdowns.as_ref() {
             for breakdown in agent_breakdowns {
-                table.push(all_table_row(breakdown, compact, true, shared.no_cost));
+                let mut cells = all_table_row(breakdown, compact, true, shared.no_cost);
+                if shared.by_provider && shared.breakdown {
+                    cells[2].clear();
+                }
+                table.push(cells);
                 if shared.breakdown && !breakdown.model_breakdowns.is_empty() {
                     push_model_breakdown_rows(
                         &mut table,
@@ -332,6 +364,9 @@ pub(super) fn print_table(
         table.push(total_row);
     }
     table.print()?;
+    if shared.by_provider {
+        println!("Agent and provider rows are subtotals. Total counts usage once.");
+    }
     crate::print_missing_pricing_warnings(&all_rows_as_usage_summaries(rows), shared.offline);
     if compact {
         eprintln!("\nRunning in Compact Mode");
@@ -420,9 +455,19 @@ pub(super) fn all_table_row(
     } else {
         row.period.clone()
     };
-    let agent = if breakdown {
+    let agent = if let Some(provider) = row
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata["provider"].as_str())
+    {
+        if breakdown {
+            format!("  - {provider}")
+        } else {
+            format!("{provider}\n{}", agent_label(row.agent))
+        }
+    } else if breakdown {
         format!("- {}", agent_label(row.agent))
-    } else if row.agent_breakdowns.is_some() {
+    } else if row.agent == "all" {
         "All".to_string()
     } else {
         agent_label(row.agent).to_string()

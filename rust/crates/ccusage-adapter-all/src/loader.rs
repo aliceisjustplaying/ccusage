@@ -396,7 +396,10 @@ fn load_base_rows(
 }
 
 fn finish_rows(kind: AgentReportKind, mut rows: Vec<AllRow>, shared: &SharedArgs) -> Vec<AllRow> {
-    if kind == AgentReportKind::Session {
+    if kind == AgentReportKind::Session && !shared.summary {
+        if shared.by_provider {
+            rows = aggregate_report_rows(rows, kind, true, false);
+        }
         for row in &mut rows {
             row.metadata_agents = None;
         }
@@ -414,7 +417,7 @@ fn finish_rows(kind: AgentReportKind, mut rows: Vec<AllRow>, shared: &SharedArgs
         return rows;
     }
 
-    let mut aggregated = aggregate_rows(rows, kind);
+    let mut aggregated = aggregate_report_rows(rows, kind, shared.by_provider, shared.summary);
     sort_rows(&mut aggregated, &shared.order);
     aggregated
 }
@@ -578,6 +581,9 @@ fn load_pi_format_agent_rows(
 ) -> Result<AgentRows> {
     let mut entries = pi::load_entries(shared, custom_path, Some(pricing))?;
     let detected = !entries.is_empty();
+    if shared.by_provider {
+        return filtered_pi_format_agent_rows(agent, kind, shared, entries, true);
+    }
     let summaries = if kind == AgentReportKind::Session {
         filter_loaded_entries_by_date(&mut entries, shared);
         summarize_entry_sessions(&entries)?
@@ -623,6 +629,31 @@ fn filtered_pi_format_agent_rows(
 ) -> Result<AgentRows> {
     let detected = !entries.is_empty();
     filter_loaded_entries_by_date(&mut entries, shared);
+    if shared.by_provider {
+        let mut providers = BTreeMap::<String, Vec<LoadedEntry>>::new();
+        for entry in entries {
+            providers
+                .entry(
+                    entry
+                        .data
+                        .version
+                        .clone()
+                        .unwrap_or_else(|| "Provider not recorded".into()),
+                )
+                .or_default()
+                .push(entry);
+        }
+        let mut rows = Vec::new();
+        for (provider, entries) in providers {
+            let summaries = pi::summarize_entries(&entries, kind)?;
+            for mut row in summary_rows(agent, summaries, include_project_path) {
+                let metadata = row.metadata.get_or_insert_with(|| json!({}));
+                metadata["provider"] = json!(provider);
+                rows.push(row);
+            }
+        }
+        return Ok(AgentRows { rows, detected });
+    }
     let summaries = pi::summarize_entries(&entries, kind)?;
     Ok(AgentRows {
         rows: summary_rows(agent, summaries, include_project_path),
@@ -884,25 +915,91 @@ where
     }
 }
 
+#[cfg(test)]
 pub(super) fn aggregate_rows(rows: Vec<AllRow>, kind: AgentReportKind) -> Vec<AllRow> {
-    let mut groups = BTreeMap::<String, AllAccumulator>::new();
+    aggregate_report_rows(rows, kind, false, false)
+}
+
+fn aggregate_report_rows(
+    rows: Vec<AllRow>,
+    kind: AgentReportKind,
+    by_provider: bool,
+    summary: bool,
+) -> Vec<AllRow> {
+    let mut groups =
+        BTreeMap::<(String, Option<&'static str>, Option<String>), AllAccumulator>::new();
     for mut row in rows {
-        let period = match kind {
-            AgentReportKind::Daily => row.period.clone(),
-            AgentReportKind::Monthly => row
-                .period
-                .get(..7)
-                .map_or_else(|| row.period.clone(), str::to_string),
-            AgentReportKind::Weekly => crate::week_start(&row.period, WeekDay::Monday)
-                .unwrap_or_else(|| row.period.clone()),
-            AgentReportKind::Session => row.period.clone(),
+        let period = if summary {
+            "Summary".to_string()
+        } else {
+            match kind {
+                AgentReportKind::Daily => row.period.clone(),
+                AgentReportKind::Monthly => row
+                    .period
+                    .get(..7)
+                    .map_or_else(|| row.period.clone(), str::to_string),
+                AgentReportKind::Weekly => crate::week_start(&row.period, WeekDay::Monday)
+                    .unwrap_or_else(|| row.period.clone()),
+                AgentReportKind::Session => row.period.clone(),
+            }
         };
+        let provider = if by_provider {
+            row.metadata
+                .as_ref()
+                .and_then(|metadata| metadata["provider"].as_str())
+                .map(str::to_string)
+        } else {
+            None
+        };
+        let agent = by_provider.then_some(row.agent);
         row.period = period.clone();
-        groups.entry(period).or_default().add(row);
+        groups
+            .entry((period, agent, provider))
+            .or_default()
+            .add(row);
     }
-    groups
+    let rows: Vec<_> = groups
         .into_iter()
-        .map(|(period, group)| group.into_row(period))
+        .map(|((period, agent, provider), group)| {
+            let mut row = group.into_row(period);
+            if let Some(agent) = agent {
+                row.agent = agent;
+                row.agent_breakdowns = None;
+            }
+            if let Some(provider) = provider {
+                row.metadata = Some(json!({ "provider": provider, "agents": row.metadata_agents }));
+            }
+            row
+        })
+        .collect();
+    if !by_provider {
+        return rows;
+    }
+
+    let mut agents = BTreeMap::<(String, &'static str), Vec<AllRow>>::new();
+    for row in rows {
+        agents
+            .entry((row.period.clone(), row.agent))
+            .or_default()
+            .push(row);
+    }
+    agents
+        .into_iter()
+        .map(|((period, agent), providers)| {
+            let has_providers = providers.iter().any(|row| {
+                row.metadata
+                    .as_ref()
+                    .is_some_and(|m| m.get("provider").is_some())
+            });
+            let mut total = AllAccumulator::default();
+            for row in &providers {
+                total.add(row.clone());
+            }
+            let mut row = total.into_row(period);
+            row.agent = agent;
+            row.agent_breakdowns = has_providers.then_some(providers);
+            row
+        })
         .collect()
 }
 
@@ -911,6 +1008,113 @@ mod tests {
     use super::*;
     use ccusage_cli::NamedPiStore;
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
+
+    #[test]
+    fn provider_grouping_is_nested_under_each_agent() {
+        let mut rows = summary_rows("claude", vec![usage_summary("2026-08-01", 7)], false);
+        for agent in ["pi", "omp"] {
+            let mut source = summary_rows(agent, vec![usage_summary("2026-08-01", 11)], false);
+            source[0].metadata = Some(json!({"provider": "alpha"}));
+            rows.extend(source);
+        }
+        let shared = SharedArgs {
+            by_provider: true,
+            summary: true,
+            ..SharedArgs::with_defaults()
+        };
+        let rows = finish_rows(AgentReportKind::Daily, rows, &shared);
+        assert_eq!(rows.len(), 3);
+        let claude = rows.iter().find(|row| row.agent == "claude").unwrap();
+        assert_eq!(claude.input_tokens, 7);
+        assert!(claude.agent_breakdowns.is_none());
+        for agent in ["pi", "omp"] {
+            let row = rows.iter().find(|row| row.agent == agent).unwrap();
+            assert_eq!(row.input_tokens, 11);
+            let providers = row.agent_breakdowns.as_ref().unwrap();
+            assert_eq!(providers.len(), 1);
+            assert_eq!(providers[0].metadata.as_ref().unwrap()["provider"], "alpha");
+        }
+    }
+
+    #[test]
+    fn provider_summary_preserves_filtered_pi_usage() {
+        let fixture = fs_fixture!({
+            "sessions/project/session.jsonl": concat!(
+                "{\"type\":\"message\",\"timestamp\":\"2026-08-01T12:00:00Z\",\"message\":{\"role\":\"assistant\",\"provider\":\"alpha\",\"model\":\"same-model\",\"usage\":{\"input\":10,\"output\":1,\"cost\":{\"total\":1.0}}}}\n",
+                "{\"type\":\"message\",\"timestamp\":\"2026-08-02T12:00:00Z\",\"message\":{\"role\":\"assistant\",\"provider\":\"beta\",\"model\":\"same-model\",\"usage\":{\"input\":20,\"output\":2,\"cost\":{\"total\":2.0}}}}\n",
+                "{\"type\":\"message\",\"timestamp\":\"2026-08-03T12:00:00Z\",\"message\":{\"role\":\"assistant\",\"provider\":\"alpha\",\"model\":\"same-model\",\"usage\":{\"input\":30,\"output\":3,\"cost\":{\"total\":3.0}}}}\n",
+                "{\"type\":\"message\",\"timestamp\":\"2026-08-04T12:00:00Z\",\"message\":{\"role\":\"assistant\",\"model\":\"same-model\",\"usage\":{\"input\":40,\"output\":4,\"cost\":{\"total\":4.0}}}}\n",
+                "{\"type\":\"message\",\"timestamp\":\"2026-07-01T12:00:00Z\",\"message\":{\"role\":\"assistant\",\"provider\":\"excluded\",\"model\":\"same-model\",\"usage\":{\"input\":100,\"output\":1}}}\n",
+            ),
+        });
+        let path = fixture.path("sessions").to_string_lossy().into_owned();
+        let shared = SharedArgs {
+            by_provider: true,
+            summary: true,
+            since: Some("20260801".into()),
+            timezone: Some("UTC".into()),
+            mode: CostMode::Display,
+            offline: true,
+            ..SharedArgs::with_defaults()
+        };
+        for kind in [
+            AgentReportKind::Daily,
+            AgentReportKind::Weekly,
+            AgentReportKind::Monthly,
+            AgentReportKind::Session,
+        ] {
+            let base = load_named_pi_store_rows(
+                "omp",
+                &path,
+                load_kind_for_report(kind),
+                &shared,
+                &PricingMap::default(),
+            )
+            .unwrap();
+            let rows = finish_rows(kind, base.rows, &shared);
+            let report = super::super::report::report_json_with_agents(&rows, kind, true);
+            assert_eq!(rows.len(), 1, "{kind:?}");
+            assert!(rows.iter().all(|row| row.period == "Summary"));
+            let providers = rows[0].agent_breakdowns.as_ref().unwrap();
+            assert_eq!(providers.len(), 3);
+            let alpha = providers
+                .iter()
+                .find(|row| {
+                    row.metadata.as_ref().and_then(|m| m["provider"].as_str()) == Some("alpha")
+                })
+                .unwrap();
+            assert_eq!(alpha.input_tokens, 40);
+            assert_eq!(alpha.total_tokens, 44);
+            assert_eq!(alpha.total_cost, 4.0);
+            assert_eq!(alpha.agent, "omp");
+            assert_eq!(report["totals"]["totalTokens"], 110);
+            assert_eq!(report["totals"]["totalCost"], 10.0);
+        }
+    }
+
+    #[test]
+    fn provider_summary_keeps_other_agents_identified_and_handles_empty_input() {
+        let shared = SharedArgs {
+            by_provider: true,
+            summary: true,
+            ..SharedArgs::with_defaults()
+        };
+        let rows = summary_rows(
+            "claude",
+            vec![
+                usage_summary("2026-08-01", 7),
+                usage_summary("2026-08-02", 11),
+            ],
+            false,
+        );
+        let rows = finish_rows(AgentReportKind::Daily, rows, &shared);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].input_tokens, 18);
+        assert!(rows[0].metadata.is_none());
+        assert_eq!(rows[0].agent, "claude");
+        assert!(rows[0].agent_breakdowns.is_none());
+        assert!(finish_rows(AgentReportKind::Daily, vec![], &shared).is_empty());
+    }
 
     fn usage_summary(date: &str, input_tokens: u64) -> UsageSummary {
         UsageSummary {

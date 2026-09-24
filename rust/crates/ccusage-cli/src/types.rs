@@ -45,6 +45,10 @@ pub struct SharedArgs {
     /// Whether the CLI or configuration supplied an order, rather than the default.
     pub order_explicit: bool,
     pub breakdown: bool,
+    /// Unified reports only: group by agent, then recorded Pi provider.
+    pub by_provider: bool,
+    /// Unified reports only: combine the filtered date range.
+    pub summary: bool,
     pub offline: bool,
     pub no_offline: bool,
     pub color: bool,

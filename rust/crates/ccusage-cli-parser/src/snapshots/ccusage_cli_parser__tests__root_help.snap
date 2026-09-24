@@ -1,5 +1,5 @@
 ---
-source: crates/ccusage-cli/src/tests.rs
+source: crates/ccusage-cli-parser/src/tests.rs
 expression: help_text()
 ---
 USAGE:
@@ -66,6 +66,8 @@ OPTIONS:
   --all                                Accepted for compatibility; all detected supported agents are included by default (default: false)
   --sections <sections>                Emit multiple unified report sections from one load (daily, weekly, monthly, session)
   --by-agent                           Include per-agent JSON breakdowns in unified report rows (default: false)
+  --by-provider                        Group by agent with Pi provider subtotals; other agents stay separate (default: false)
+  --summary                            Combine the filtered range; with --by-provider, show agent and provider subtotals (default: false)
   -O, --offline                        Use cached pricing data where supported (default: false)
   --no-offline                         Negatable of -O, --offline
   --compact                            Force compact table layout for narrow terminals (default: false)

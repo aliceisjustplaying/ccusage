@@ -302,6 +302,31 @@ one session contains usage from multiple providers, the session report emits a
 separate row for each provider and identifies it as `<session-id>@<provider>`.
 Sessions with zero or one provider retain their original session ID.
 
+### Unified Provider Summaries
+
+This fork also supports provider grouping in the unified reports:
+
+```bash
+ccusage daily -s 2026-08-01 --by-provider --summary --breakdown
+```
+
+`--by-provider` keeps each agent separate, with recorded Pi providers nested
+under Pi or the corresponding named store. Other agents keep their own rows;
+only Pi messages missing a provider use `Provider not recorded`. Providers are
+not guessed from model names. With `--breakdown`, model rows appear below their
+provider or agent, without repeating model lists on subtotal rows.
+`--summary` combines the filtered range into one subtotal per agent. Omit it to
+keep individual periods. Without `--by-provider`, `--summary` produces one row
+for the whole filtered range. Parent and child rows are subtotals, not additional
+usage; the final Total counts each entry once.
+
+These flags work with top-level `daily`, `weekly`, `monthly` and `session`
+reports, including `--sections`. They do not apply to focused commands such as
+`ccusage pi daily` or `session --id`. For machine-readable output, add `--json`;
+Pi and named-store rows include a `providers` array whose entries identify each
+provider. Summary rows use `period: "Summary"`.
+See [JSON Output](/guide/json-output).
+
 Long project names are truncated to 25 characters with `...` suffix for readability.
 
 ### JSON Output

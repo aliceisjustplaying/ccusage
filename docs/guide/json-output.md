@@ -64,6 +64,15 @@ Update ccusage, or run without `--offline`, once the pricing source lists the mo
 
 Unified reports also support JSON-oriented flags for dashboard-style consumers:
 
+This fork's `--by-provider` keeps one unified row per agent and period, nesting
+Pi provider breakdowns in a `providers` array. Each nested entry has a `provider`
+field; only Pi messages lacking that field use `Provider not recorded`. Other
+agents stay identified without a provider group. `--summary` combines the filtered
+range, using `period: "Summary"`; with both flags there is one row per agent.
+Provider rows are subtotals of their agent row, not additional usage. Both flags
+work with `--sections` and preserve the top-level totals.
+See [Pi provider summaries](/guide/pi/#unified-provider-summaries).
+
 ```bash
 ccusage daily --sections daily,monthly,session --by-agent --json
 ```

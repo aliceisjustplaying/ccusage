@@ -17,6 +17,7 @@ pub(super) struct AllRow {
     pub(super) total_cost: f64,
     pub(super) metadata: Option<Value>,
     pub(super) metadata_agents: Option<Vec<&'static str>>,
+    // Children are agents for an "all" row, or provider subtotals for a source row.
     pub(super) agent_breakdowns: Option<Vec<AllRow>>,
     pub(super) model_breakdowns: Vec<ModelBreakdown>,
 }

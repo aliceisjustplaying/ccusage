@@ -93,6 +93,16 @@
 			"default": "false"
 		},
 		{
+			"flags": "--by-provider",
+			"description": "Group by agent with Pi provider subtotals; other agents stay separate",
+			"default": "false"
+		},
+		{
+			"flags": "--summary",
+			"description": "Combine the filtered range; with --by-provider, show agent and provider subtotals",
+			"default": "false"
+		},
+		{
 			"flags": "-O, --offline",
 			"description": "Use cached pricing data where supported",
 			"default": "false"

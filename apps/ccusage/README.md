@@ -165,6 +165,11 @@ bunx ccusage --compact  # Force compact table mode
 bunx ccusage monthly --compact  # Compact monthly report
 ```
 
+This fork also supports `ccusage daily --by-provider --summary --breakdown` for
+a filtered-range summary by agent, with recorded Pi providers nested under Pi
+and named Pi stores. Other agents remain separate; only Pi messages missing a
+provider use `Provider not recorded`.
+
 ## Features
 
 - 📊 **Daily Report**: View token usage and costs aggregated by date

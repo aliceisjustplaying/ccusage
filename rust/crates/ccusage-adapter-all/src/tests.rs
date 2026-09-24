@@ -1488,3 +1488,12 @@ fn full_table_columns_include_cache_and_total_token_metrics() {
     );
     assert_eq!(headers.len(), aligns.len());
 }
+#[test]
+fn provider_is_visible_in_table_and_json() {
+    let mut row = test_agent_rows("pi").rows.remove(0);
+    row.metadata = Some(serde_json::json!({"provider": "alpha"}));
+    let cells = all_table_row(&row, false, false, false);
+    assert!(cells[1].contains("alpha"));
+    let report = report_json(&[row], AgentReportKind::Daily);
+    assert_eq!(report["daily"][0]["provider"], "alpha");
+}

@@ -21,6 +21,8 @@ enum ControlArg {
 struct RootAllOptions {
     sections: Option<Vec<AgentReportKind>>,
     by_agent: bool,
+    by_provider: bool,
+    summary: bool,
     first_flag: Option<&'static str>,
 }
 
@@ -37,7 +39,9 @@ impl RootAllOptions {
         self.first_flag.unwrap_or("--sections")
     }
 
-    fn into_agent_args(self, shared: SharedArgs, kind: AgentReportKind) -> AgentCommandArgs {
+    fn into_agent_args(self, mut shared: SharedArgs, kind: AgentReportKind) -> AgentCommandArgs {
+        shared.by_provider = self.by_provider;
+        shared.summary = self.summary;
         AgentCommandArgs {
             shared,
             kind,
@@ -371,9 +375,7 @@ fn parse_root_all_arg(
     parser: &mut ArgParser,
     options: &mut RootAllOptions,
 ) -> Result<bool, String> {
-    if let Some(flag) =
-        parse_unified_report_arg(parser, &mut options.sections, &mut options.by_agent)?
-    {
+    if let Some(flag) = parse_unified_report_arg(parser, options)? {
         options.mark_used(flag);
         return Ok(true);
     }
@@ -382,8 +384,7 @@ fn parse_root_all_arg(
 
 fn parse_unified_report_arg(
     parser: &mut ArgParser,
-    sections: &mut Option<Vec<AgentReportKind>>,
-    by_agent: &mut bool,
+    options: &mut RootAllOptions,
 ) -> Result<Option<&'static str>, String> {
     if matches!(parser.peek(), Some("--all")) {
         parser.next();
@@ -391,13 +392,23 @@ fn parse_unified_report_arg(
     }
     if matches!(parser.peek_name(), Some("--sections")) {
         parser.next_flag()?;
-        *sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
+        options.sections = Some(parse_report_sections(&parser.value_for("--sections")?)?);
         return Ok(Some("--sections"));
     }
     if matches!(parser.peek(), Some("--by-agent")) {
         parser.next();
-        *by_agent = true;
+        options.by_agent = true;
         return Ok(Some("--by-agent"));
+    }
+    if matches!(parser.peek(), Some("--by-provider")) {
+        parser.next();
+        options.by_provider = true;
+        return Ok(Some("--by-provider"));
+    }
+    if matches!(parser.peek(), Some("--summary")) {
+        parser.next();
+        options.summary = true;
+        return Ok(Some("--summary"));
     }
     Ok(None)
 }
@@ -407,39 +418,26 @@ fn parse_all_command(
     mut shared: SharedArgs,
     kind: AgentReportKind,
     _config: &dyn CliConfig,
-    initial_options: RootAllOptions,
+    mut initial_options: RootAllOptions,
 ) -> Result<Command, String> {
-    let mut sections = initial_options.sections;
-    let mut by_agent = initial_options.by_agent;
     while parser.peek().is_some() {
-        if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
+        if parse_unified_report_arg(parser, &mut initial_options)?.is_some() {
             continue;
         }
         parse_shared_arg(parser, &mut shared)?;
     }
-    Ok(Command::All(AgentCommandArgs {
-        shared,
-        kind,
-        session_id: None,
-        sections,
-        by_agent,
-        pi_path: None,
-        open_claw_path: None,
-        codex_speed: CodexSpeed::Auto,
-    }))
+    Ok(Command::All(initial_options.into_agent_args(shared, kind)))
 }
 
 fn parse_top_level_session_command(
     parser: &mut ArgParser,
     shared: SharedArgs,
     _config: &dyn CliConfig,
-    initial_options: RootAllOptions,
+    mut initial_options: RootAllOptions,
 ) -> Result<Command, String> {
     let mut args = SessionArgs { shared, id: None };
-    let mut sections = initial_options.sections;
-    let mut by_agent = initial_options.by_agent;
     while parser.peek().is_some() {
-        if parse_unified_report_arg(parser, &mut sections, &mut by_agent)?.is_some() {
+        if parse_unified_report_arg(parser, &mut initial_options)?.is_some() {
             continue;
         }
         if parse_shared_arg_for_command(parser, &mut args.shared)? {
@@ -452,7 +450,13 @@ fn parse_top_level_session_command(
     }
 
     if args.id.is_some() {
-        if sections.is_some() || by_agent {
+        if initial_options.by_provider || initial_options.summary {
+            return Err(
+                "The --by-provider and --summary options cannot be used with session --id."
+                    .to_string(),
+            );
+        }
+        if initial_options.sections.is_some() || initial_options.by_agent {
             return Err(
                 "The --sections and --by-agent options cannot be used with session --id."
                     .to_string(),
@@ -461,16 +465,9 @@ fn parse_top_level_session_command(
         return Ok(Command::Session(args));
     }
 
-    Ok(Command::All(AgentCommandArgs {
-        shared: args.shared,
-        kind: AgentReportKind::Session,
-        session_id: None,
-        sections,
-        by_agent,
-        pi_path: None,
-        open_claw_path: None,
-        codex_speed: CodexSpeed::Auto,
-    }))
+    Ok(Command::All(
+        initial_options.into_agent_args(args.shared, AgentReportKind::Session),
+    ))
 }
 
 fn parse_claude_daily_command(

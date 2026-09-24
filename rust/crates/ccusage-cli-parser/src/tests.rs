@@ -11,6 +11,64 @@ fn parse(args: &[&str]) -> Cli {
     Cli::parse_from(args.iter().map(OsString::from)).unwrap()
 }
 
+#[test]
+fn accepts_provider_summary_command() {
+    let cli = parse(&[
+        "ccusage",
+        "daily",
+        "-s",
+        "2026-08-01",
+        "--by-provider",
+        "--summary",
+        "--breakdown",
+    ]);
+    let Some(Command::All(args)) = cli.command else {
+        panic!("expected unified report")
+    };
+    assert!(args.shared.by_provider);
+    assert!(args.shared.summary);
+    assert!(args.shared.breakdown);
+    assert_eq!(args.shared.since.as_deref(), Some("20260801"));
+}
+
+#[test]
+fn provider_summary_flags_work_before_and_after_unified_commands() {
+    for command in ["daily", "weekly", "monthly", "session"] {
+        for args in [
+            vec!["ccusage", "--by-provider", "--summary", command],
+            vec![
+                "ccusage",
+                command,
+                "--summary",
+                "--by-provider",
+                "--by-agent",
+                "--sections",
+                "daily,session",
+            ],
+        ] {
+            let Some(Command::All(args)) = parse(&args).command else {
+                panic!("expected unified report")
+            };
+            assert!(args.shared.by_provider && args.shared.summary);
+        }
+    }
+    let Some(Command::All(args)) = parse(&["ccusage", "--by-provider", "--summary"]).command else {
+        panic!("expected unified report")
+    };
+    assert!(args.shared.by_provider && args.shared.summary);
+}
+
+#[test]
+fn provider_summary_flags_are_rejected_where_unsupported() {
+    for flag in ["--by-provider", "--summary"] {
+        assert!(parse_error(&["ccusage", "pi", "daily", flag]).contains(flag));
+        assert!(parse_error(&["ccusage", flag, "pi", "daily"]).contains(flag));
+        assert!(
+            parse_error(&["ccusage", "session", "--id", "test", flag]).contains("cannot be used")
+        );
+    }
+}
+
 fn parse_with_config(args: &[&str], config: &dyn CliConfig) -> Cli {
     Cli::parse_from_with_config(
         args.iter().map(OsString::from),
