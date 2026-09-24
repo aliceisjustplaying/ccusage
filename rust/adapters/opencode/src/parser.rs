@@ -387,12 +387,23 @@ fn missing_open_code_pricing(
     if mode == CostMode::Display || cost_usd.is_some_and(|cost| cost > 0.0) {
         return None;
     }
+    // OpenCode Zen (`opencode`) records the real per-request charge, so a
+    // stored $0 there means a free model (`*-free`, stealth previews), not a
+    // missing price. Other providers store 0 for subscription/OAuth usage, which
+    // still needs a calculated API-equivalent cost and a warning when unpriced.
+    if is_open_code_zen_provider(provider) && cost_usd == Some(0.0) {
+        return None;
+    }
     missing_pricing_model_for_candidates(
         model,
         open_code_model_candidates(model, provider),
         crate::total_usage_tokens(usage),
         pricing,
     )
+}
+
+fn is_open_code_zen_provider(provider: &str) -> bool {
+    provider == "opencode"
 }
 
 fn open_code_model_candidates(model: &str, provider: &str) -> Vec<String> {
@@ -614,6 +625,41 @@ mod tests {
                 "github_copilot/claude-sonnet-4.5",
                 "github_copilot/claude-sonnet-4-5",
             ]
+        );
+    }
+
+    #[test]
+    fn treats_zero_cost_opencode_zen_models_as_free_not_missing() {
+        let pricing = PricingMap::load_embedded();
+        let zen_free = |provider: &str| {
+            message_value_to_entry(
+                &message(json!({
+                    "id": "message-a",
+                    "sessionID": "session-a",
+                    "providerID": provider,
+                    "modelID": "x-preview-f-free",
+                    "time": { "created": 0 },
+                    "tokens": { "input": 100, "output": 10 },
+                    "cost": 0
+                })),
+                None,
+                None,
+                None,
+                CostMode::Auto,
+                Some(&pricing),
+            )
+            .unwrap()
+        };
+
+        let zen = zen_free("opencode");
+        assert_eq!(zen.cost, 0.0);
+        assert_eq!(zen.missing_pricing_model, None);
+
+        // A $0 from a subscription provider is not a price, so it still warns.
+        let other = zen_free("github-copilot");
+        assert_eq!(
+            other.missing_pricing_model.as_deref(),
+            Some("x-preview-f-free")
         );
     }
 
