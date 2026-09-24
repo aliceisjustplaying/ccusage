@@ -192,6 +192,8 @@ fn is_zai_provider(provider_id: Option<&str>) -> bool {
                 | "z.ai"
                 | "zai-coding-plan"
                 | "builtin:zai-coding-plan"
+                | "zai-start-plan"
+                | "builtin:zai-start-plan"
                 | "builtin:bigmodel-coding-plan"
         )
     })
@@ -275,6 +277,27 @@ mod tests {
             custom.missing_pricing_model.as_deref(),
             Some("deepseek-v4-flash")
         );
+    }
+
+    #[test]
+    fn prices_zai_start_plan_provider() {
+        for model in ["GLM-5.3", "GLM-5.3-Flash"] {
+            let mut row = row();
+            row.provider_id = Some("builtin:zai-start-plan".to_string());
+            row.model_id = model.to_string();
+
+            let entry = row_to_entry(
+                row,
+                Some(&JiffTimeZone::UTC),
+                CostMode::Calculate,
+                &PricingMap::load_embedded(),
+                &BTreeMap::new(),
+            )
+            .unwrap();
+
+            assert!(entry.cost > 0.0, "{model} should be priced");
+            assert!(entry.missing_pricing_model.is_none(), "{model}");
+        }
     }
 
     #[test]
