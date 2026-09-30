@@ -22,6 +22,7 @@ struct RootAllOptions {
     sections: Option<Vec<AgentReportKind>>,
     by_agent: bool,
     by_provider: bool,
+    pool_providers: bool,
     summary: bool,
     first_flag: Option<&'static str>,
 }
@@ -40,7 +41,8 @@ impl RootAllOptions {
     }
 
     fn into_agent_args(self, mut shared: SharedArgs, kind: AgentReportKind) -> AgentCommandArgs {
-        shared.by_provider = self.by_provider;
+        shared.by_provider = self.by_provider || self.pool_providers;
+        shared.pool_providers = self.pool_providers;
         shared.summary = self.summary;
         AgentCommandArgs {
             shared,
@@ -405,6 +407,11 @@ fn parse_unified_report_arg(
         options.by_provider = true;
         return Ok(Some("--by-provider"));
     }
+    if matches!(parser.peek(), Some("--pool-providers")) {
+        parser.next();
+        options.pool_providers = true;
+        return Ok(Some("--pool-providers"));
+    }
     if matches!(parser.peek(), Some("--summary")) {
         parser.next();
         options.summary = true;
@@ -450,9 +457,10 @@ fn parse_top_level_session_command(
     }
 
     if args.id.is_some() {
-        if initial_options.by_provider || initial_options.summary {
+        if initial_options.by_provider || initial_options.pool_providers || initial_options.summary
+        {
             return Err(
-                "The --by-provider and --summary options cannot be used with session --id."
+                "The --by-provider, --pool-providers and --summary options cannot be used with session --id."
                     .to_string(),
             );
         }

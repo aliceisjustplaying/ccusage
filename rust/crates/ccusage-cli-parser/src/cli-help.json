@@ -98,6 +98,11 @@
 			"default": "false"
 		},
 		{
+			"flags": "--pool-providers",
+			"description": "Pool usage by provider across agents (Claude Code and Pi anthropic in one row)",
+			"default": "false"
+		},
+		{
 			"flags": "--summary",
 			"description": "Combine the filtered range; with --by-provider, show agent and provider subtotals",
 			"default": "false"

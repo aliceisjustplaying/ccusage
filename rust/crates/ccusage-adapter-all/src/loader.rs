@@ -396,6 +396,16 @@ fn load_base_rows(
 }
 
 fn finish_rows(kind: AgentReportKind, mut rows: Vec<AllRow>, shared: &SharedArgs) -> Vec<AllRow> {
+    if shared.pool_providers {
+        let mut pooled = pool_provider_rows(rows, kind, shared.summary);
+        let desc = shared.order == crate::cli::SortOrder::Desc;
+        pooled.sort_by(|a, b| {
+            let period = a.period.cmp(&b.period);
+            if desc { period.reverse() } else { period }
+                .then_with(|| b.total_cost.total_cmp(&a.total_cost))
+        });
+        return pooled;
+    }
     if kind == AgentReportKind::Session && !shared.summary {
         if shared.by_provider {
             rows = aggregate_report_rows(rows, kind, true, false);
@@ -915,6 +925,69 @@ where
     }
 }
 
+/// Provider that billed an agent's usage when the agent records no provider itself.
+fn default_agent_provider(agent: &str) -> &str {
+    match agent {
+        "claude" => "anthropic",
+        "codex" => "openai-codex",
+        "gemini" | "antigravity" => "google",
+        "grok" => "xai",
+        "zcode" => "zai",
+        "opencode" | "kilo" => "opencode",
+        "copilot" => "github-copilot",
+        _ => agent,
+    }
+}
+
+/// Folds provider aliases recorded by Pi onto the ids agents default to.
+fn normalize_provider(provider: &str) -> &str {
+    match provider {
+        "oc-sdk-zen" => "opencode",
+        "xai-auth" => "xai",
+        "zcode-start" | "zai-start-plan" => "zai",
+        other => other,
+    }
+}
+
+fn pool_provider_rows(rows: Vec<AllRow>, kind: AgentReportKind, summary: bool) -> Vec<AllRow> {
+    let mut groups = BTreeMap::<(String, String), AllAccumulator>::new();
+    for mut row in rows {
+        let period = if summary {
+            "Summary".to_string()
+        } else {
+            match kind {
+                AgentReportKind::Monthly => row
+                    .period
+                    .get(..7)
+                    .map_or_else(|| row.period.clone(), str::to_string),
+                AgentReportKind::Weekly => crate::week_start(&row.period, WeekDay::Monday)
+                    .unwrap_or_else(|| row.period.clone()),
+                AgentReportKind::Daily | AgentReportKind::Session => row.period.clone(),
+            }
+        };
+        let provider = row
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata["provider"].as_str())
+            .map_or_else(
+                || default_agent_provider(row.agent).to_string(),
+                |p| normalize_provider(p).to_string(),
+            );
+        row.period = period.clone();
+        groups.entry((period, provider)).or_default().add(row);
+    }
+    groups
+        .into_iter()
+        .map(|((period, provider), group)| {
+            let mut row = group.into_row(period);
+            row.agent = "all";
+            row.agent_breakdowns = None;
+            row.metadata = Some(json!({ "provider": provider, "agents": row.metadata_agents }));
+            row
+        })
+        .collect()
+}
+
 #[cfg(test)]
 pub(super) fn aggregate_rows(rows: Vec<AllRow>, kind: AgentReportKind) -> Vec<AllRow> {
     aggregate_report_rows(rows, kind, false, false)
@@ -1008,6 +1081,45 @@ mod tests {
     use super::*;
     use ccusage_cli::NamedPiStore;
     use ccusage_test_support::{EnvVarGuard, fs_fixture};
+
+    #[test]
+    fn pooled_providers_merge_the_same_provider_across_agents() {
+        let mut rows = summary_rows("claude", vec![usage_summary("2026-08-01", 7)], false);
+        rows.extend(summary_rows(
+            "codex",
+            vec![usage_summary("2026-08-01", 5)],
+            false,
+        ));
+        for (provider, tokens) in [("anthropic", 11), ("xai-auth", 3), ("openai-codex", 2)] {
+            let mut source = summary_rows("pi", vec![usage_summary("2026-08-02", tokens)], false);
+            source[0].metadata = Some(json!({ "provider": provider }));
+            rows.extend(source);
+        }
+        let shared = SharedArgs {
+            by_provider: true,
+            pool_providers: true,
+            summary: true,
+            ..SharedArgs::with_defaults()
+        };
+        let rows = finish_rows(AgentReportKind::Daily, rows, &shared);
+        let by = |p: &str| {
+            rows.iter()
+                .find(|row| row.metadata.as_ref().unwrap()["provider"] == p)
+                .unwrap()
+        };
+        assert_eq!(rows.len(), 3);
+        assert_eq!(by("anthropic").input_tokens, 18);
+        assert_eq!(
+            by("anthropic").metadata_agents.as_deref(),
+            Some(&["claude", "pi"][..])
+        );
+        assert_eq!(by("openai-codex").input_tokens, 7);
+        assert_eq!(by("xai").input_tokens, 3);
+        assert!(
+            rows.iter()
+                .all(|row| row.period == "Summary" && row.agent_breakdowns.is_none())
+        );
+    }
 
     #[test]
     fn provider_grouping_is_nested_under_each_agent() {

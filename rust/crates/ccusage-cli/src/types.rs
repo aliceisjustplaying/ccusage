@@ -47,6 +47,8 @@ pub struct SharedArgs {
     pub breakdown: bool,
     /// Unified reports only: group by agent, then recorded Pi provider.
     pub by_provider: bool,
+    /// Unified reports only: pool usage by provider across every agent.
+    pub pool_providers: bool,
     /// Unified reports only: combine the filtered date range.
     pub summary: bool,
     pub offline: bool,

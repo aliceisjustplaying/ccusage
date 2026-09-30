@@ -1,5 +1,6 @@
 ---
 source: crates/ccusage-cli-parser/src/tests.rs
+assertion_line: 981
 expression: help_text()
 ---
 USAGE:

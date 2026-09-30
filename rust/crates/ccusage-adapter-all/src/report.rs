@@ -249,7 +249,14 @@ pub(super) fn print_table(
         crate::USAGE_COMPACT_WIDTH_THRESHOLD,
     );
     let (mut headers, aligns) = all_table_columns(kind, compact, shared.no_cost);
-    if shared.by_provider {
+    if shared.pool_providers {
+        headers[1] = "Provider";
+        headers[2] = if shared.breakdown {
+            "Agents\n/ Models"
+        } else {
+            "Agents"
+        };
+    } else if shared.by_provider {
         headers[1] = "Agent\n/ Provider";
     }
     if shared.summary {
@@ -261,7 +268,9 @@ pub(super) fn print_table(
 
     for row in rows {
         let mut cells = all_table_row(row, compact, false, shared.no_cost);
-        if shared.by_provider && shared.breakdown {
+        if shared.pool_providers {
+            (cells[1], cells[2]) = pooled_provider_cells(row);
+        } else if shared.by_provider && shared.breakdown {
             cells[2].clear();
         }
         table.push(cells);
@@ -364,7 +373,9 @@ pub(super) fn print_table(
         table.push(total_row);
     }
     table.print()?;
-    if shared.by_provider {
+    if shared.pool_providers {
+        println!("Provider rows pool every agent that used that provider.");
+    } else if shared.by_provider {
         println!("Agent and provider rows are subtotals. Total counts usage once.");
     }
     crate::print_missing_pricing_warnings(&all_rows_as_usage_summaries(rows), shared.offline);
@@ -637,6 +648,23 @@ fn first_column(kind: AgentReportKind) -> &'static str {
         AgentReportKind::Monthly => "Month",
         AgentReportKind::Session => "Session",
     }
+}
+
+fn pooled_provider_cells(row: &AllRow) -> (String, String) {
+    let provider = row
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata["provider"].as_str())
+        .unwrap_or("unknown");
+    let agents = row
+        .metadata_agents
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .map(|agent| agent_label(agent))
+        .collect::<Vec<_>>()
+        .join("\n");
+    (provider.to_string(), agents)
 }
 
 fn agent_label(agent: &str) -> &str {

@@ -1720,3 +1720,13 @@ fn preserves_configured_order_and_cli_precedence() {
         assert_eq!(report.shared.order_explicit, explicit, "{config_json}");
     }
 }
+
+#[test]
+fn pool_providers_implies_provider_loading() {
+    let Some(Command::All(args)) = parse(&["ccusage", "monthly", "--pool-providers"]).command
+    else {
+        panic!("expected unified report")
+    };
+    assert!(args.shared.pool_providers && args.shared.by_provider);
+    assert!(!args.shared.summary);
+}
