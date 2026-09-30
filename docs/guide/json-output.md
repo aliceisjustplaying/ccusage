@@ -73,6 +73,12 @@ Provider rows are subtotals of their agent row, not additional usage. Both flags
 work with `--sections` and preserve the top-level totals.
 See [Pi provider summaries](/guide/pi/#unified-provider-summaries).
 
+`--pool-providers` pools rows by provider across every agent instead. Each row
+has `agent: "all"`, `metadata.provider` and `metadata.agents` listing the agents
+that used it, plus the usual `modelBreakdowns`. Agents without recorded providers
+map to the provider that bills them, for example Claude Code to `anthropic` and
+Codex to `openai-codex`.
+
 ```bash
 ccusage daily --sections daily,monthly,session --by-agent --json
 ```

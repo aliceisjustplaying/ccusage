@@ -327,6 +327,18 @@ Pi and named-store rows include a `providers` array whose entries identify each
 provider. Summary rows use `period: "Summary"`.
 See [JSON Output](/guide/json-output).
 
+To see usage per provider regardless of which agent sent it, use
+`--pool-providers`:
+
+```bash
+ccusage monthly -s 2026-09-01 --pool-providers --summary
+```
+
+Each row is one provider, with the agents that used it in the Agents column.
+Claude Code counts as `anthropic`, Codex as `openai-codex`, Gemini CLI as
+`google`, Grok as `xai` and ZCode as `zai`; Pi rows use their recorded provider,
+with aliases such as `xai-auth` folded in. Add `--breakdown` for per-model rows.
+
 Long project names are truncated to 25 characters with `...` suffix for readability.
 
 ### JSON Output

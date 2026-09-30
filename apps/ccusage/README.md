@@ -170,6 +170,10 @@ a filtered-range summary by agent, with recorded Pi providers nested under Pi
 and named Pi stores. Other agents remain separate; only Pi messages missing a
 provider use `Provider not recorded`.
 
+`ccusage monthly --pool-providers --summary` instead pools usage by provider
+across agents: Claude Code and Pi's `anthropic` messages share one `anthropic`
+row, Codex and Pi's `openai-codex` share another.
+
 ## Features
 
 - 📊 **Daily Report**: View token usage and costs aggregated by date
